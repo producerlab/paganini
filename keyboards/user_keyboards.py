@@ -122,7 +122,8 @@ def get_quarter_period_kb(quarter_data: str) -> InlineKeyboardMarkup:
 def get_after_report_kb() -> InlineKeyboardMarkup:
     """Get kb shown after generating report"""
     ikb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text='📊 Генерация отчета', callback_data='cb_btn_generate_report')],
+        [InlineKeyboardButton(text='📊 Другой период', callback_data='cb_btn_generate_report')],
+        [InlineKeyboardButton(text='🏪 Сменить магазин', callback_data='cb_btn_manage_stores')],
         [InlineKeyboardButton(text='☰ Меню', callback_data='cb_btn_menu')]
     ])
 
@@ -170,6 +171,55 @@ def get_payment_check_kb(payment_id) -> InlineKeyboardMarkup:
     ikb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text='✅ Проверить оплату', callback_data=f'checkpayment_{payment_id}')],
         [InlineKeyboardButton(text="🔄 Выбрать другой тариф", callback_data="cb_btn_payment")]
+    ])
+
+    return ikb
+
+
+def get_onboarding_kb(step: int) -> InlineKeyboardMarkup:
+    """Get kb for onboarding step"""
+    if step == 1:
+        # Welcome - add store
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='🏪 Добавить магазин WB', callback_data='onboarding_add_store')],
+            [InlineKeyboardButton(text='⏭ Пропустить', callback_data='onboarding_skip')]
+        ])
+    elif step == 2:
+        # After store added - create first report
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='📊 Создать первый отчет', callback_data='onboarding_first_report')],
+            [InlineKeyboardButton(text='☰ Перейти в меню', callback_data='cb_btn_menu')]
+        ])
+    else:
+        # Fallback
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='☰ Меню', callback_data='cb_btn_menu')]
+        ])
+
+
+def get_error_kb(error_type: str) -> InlineKeyboardMarkup:
+    """Get kb for specific error type with contextual actions"""
+    buttons = []
+
+    if error_type == 'invalid_token':
+        buttons.append([InlineKeyboardButton(text='🏪 Проверить магазин', callback_data='cb_btn_manage_stores')])
+    elif error_type == 'timeout':
+        buttons.append([InlineKeyboardButton(text='🔄 Попробовать снова', callback_data='cb_btn_generate_report')])
+    elif error_type == 'no_data':
+        buttons.append([InlineKeyboardButton(text='📅 Выбрать другой период', callback_data='cb_btn_generate_report')])
+
+    buttons.append([InlineKeyboardButton(text='🛟 Поддержка', url='https://web.biznesnaamazon.ru/tlgrm?bot=paganini_support_bot')])
+    buttons.append([InlineKeyboardButton(text='☰ Меню', callback_data='cb_btn_menu')])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_no_generations_kb() -> InlineKeyboardMarkup:
+    """Get kb when user has no generations left"""
+    ikb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='💳 Пополнить', callback_data='cb_btn_payment')],
+        [InlineKeyboardButton(text='🤝 Пригласить друзей', callback_data='cb_btn_refs')],
+        [InlineKeyboardButton(text='☰ Меню', callback_data='cb_btn_menu')]
     ])
 
     return ikb

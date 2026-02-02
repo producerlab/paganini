@@ -16,19 +16,30 @@ async def cb_refs(callback: types.CallbackQuery, session: AsyncSession) -> None:
     user = await orm_get_user(session, user_id)
     ref_link = await generate_referral_link(user_id)
     referrals = await orm_get_refs(session, user_id)
-    reply_text = f'{callback.from_user.first_name}, ваша реферальная ссылка:\n'
-    reply_text += f'{ref_link}\n\n'
+
+    reply_text = f'<b>{callback.from_user.first_name}</b>, ваша реферальная ссылка:\n'
+    reply_text += f'<code>{ref_link}</code>\n\n'
     reply_text += f'💰 Заработано бонусов: {user.bonus_total} ₽\n'
     reply_text += f'💸 Доступно для использования: {user.bonus_left} ₽\n\n'
-    reply_text += f'👥 Ваши рефералы:\n'
-    for ref in referrals:
-        reply_text += f'+{ref}\n'
-    reply_text += '\n📌 За каждого пользователя, который оплатит доступ по вашей ссылке — вы получаете 10% от его платежа в виде бонусов. Эти бонусы можно тратить на покупку расшифровок финансовых отчётов прямо в боте.\n\n'
-    reply_text += 'Рекомендуйте и зарабатывайте 🎯'
+
+    if referrals:
+        reply_text += f'👥 <b>Ваши рефералы ({len(referrals)}):</b>\n'
+        for ref in referrals:
+            reply_text += f'• +{ref}\n'
+    else:
+        reply_text += (
+            '👥 <b>Пока нет рефералов</b>\n\n'
+            'Поделитесь ссылкой с друзьями-селлерами!\n'
+            'За каждую оплату реферала вы получите 10% бонусов.\n'
+        )
+
+    reply_text += '\n📌 Рекомендуйте и зарабатывайте 🎯'
+
     await callback.answer()
     await callback.message.answer(
         text=reply_text,
-        reply_markup=get_bonus_kb()
+        reply_markup=get_bonus_kb(),
+        parse_mode='HTML'
     )
 
 

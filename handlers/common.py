@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from keyboards.user_keyboards import get_menu_kb, get_subscribe_kb, get_contact_reply_kb, get_main_kb
+from keyboards.user_keyboards import get_menu_kb, get_subscribe_kb, get_contact_reply_kb, get_main_kb, get_onboarding_kb
 from services import auth_service
 from services.refs import orm_save_ref
 from services.logging import logger
@@ -19,6 +19,10 @@ CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME', '@khosnullin_channel')
 
 class Registration(StatesGroup):
     contact = State()
+
+
+class Onboarding(StatesGroup):
+    step_store = State()  # Waiting for user to add store
 
 
 @common_router.message(Command("start"))
@@ -102,17 +106,25 @@ async def add_user(msg: types.Message, state: FSMContext, session: AsyncSession)
         'user_name': msg.from_user.username
     }
     await auth_service.orm_add_user(session, user_data)
-    await state.clear()
+
     try:
         await msg.bot.delete_message(chat_id=msg.chat.id, message_id=msg.message_id-1)
     except Exception:
         pass  # Ignore if message already deleted
-    reply_text = '✅ Вы успешно зарегистрированы!\n'
-    reply_text += 'Для перехода к управлению магазинами нажмите на кнопку – Управление магазинами 👇'
 
+    # Start onboarding for new user
+    reply_text = (
+        '🎉 <b>Добро пожаловать в Paganini!</b>\n\n'
+        'Давайте быстро настроим бота для работы.\n\n'
+        '<b>Шаг 1:</b> Добавьте ваш магазин WB\n'
+        'Для этого понадобится API-токен из личного кабинета.\n\n'
+        '💡 <i>Первые 4 генерации отчетов — бесплатно!</i>'
+    )
+    await state.set_state(Onboarding.step_store)
     await msg.answer(
         text=reply_text,
-        reply_markup=get_menu_kb()
+        reply_markup=get_onboarding_kb(1),
+        parse_mode='HTML'
     )
 
 
@@ -160,3 +172,38 @@ async def cmd_about(msg: types.Message, state: FSMContext) -> None:
         text=reply_text,
         reply_markup=get_main_kb()
     )
+
+
+# ------------------ Onboarding Callbacks ------------------
+
+@common_router.callback_query(F.data == 'onboarding_skip')
+async def onboarding_skip(callback: types.CallbackQuery, state: FSMContext):
+    """Skip onboarding and go to menu"""
+    await state.clear()
+    await callback.message.answer(
+        text='☰ Меню\n\n💡 <i>Вы можете добавить магазин в любое время через меню</i>',
+        reply_markup=get_menu_kb(),
+        parse_mode='HTML'
+    )
+    await callback.answer()
+
+
+@common_router.callback_query(F.data == 'onboarding_add_store')
+async def onboarding_add_store(callback: types.CallbackQuery, state: FSMContext):
+    """Start adding store from onboarding"""
+    from handlers.reports import AddStore
+
+    await state.update_data(from_onboarding=True)
+    await state.set_state(AddStore.Name)
+    await callback.message.answer('Введите название магазина:')
+    await callback.answer()
+
+
+@common_router.callback_query(F.data == 'onboarding_first_report')
+async def onboarding_first_report(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Go to generate first report from onboarding"""
+    from handlers.reports import handle_generate_report
+
+    await state.clear()
+    await handle_generate_report(callback.message, callback.from_user.id, session, state)
+    await callback.answer()

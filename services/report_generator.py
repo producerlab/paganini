@@ -16,6 +16,38 @@ from database.models import Report
 from services.logging import logger
 
 
+# ------------------ Custom Exceptions ------------------
+class ReportError(Exception):
+    """Base exception for report generation errors"""
+    pass
+
+
+class InvalidTokenError(ReportError):
+    """Token is invalid or lacks permissions"""
+    pass
+
+
+class WBTimeoutError(ReportError):
+    """WB API timeout"""
+    pass
+
+
+class NoDataError(ReportError):
+    """No data found for the period"""
+    pass
+
+
+# ------------------ Progress Stages ------------------
+PROGRESS_STAGES = {
+    'init': '⏳ Подготовка к генерации...',
+    'fetch_sales': '📡 Получение данных о продажах из WB...',
+    'fetch_ads': '📊 Загрузка данных о рекламе...',
+    'fetch_cards': '🏷 Загрузка карточек товаров...',
+    'process': '📈 Обработка и объединение данных...',
+    'create_excel': '📄 Формирование Excel файла...',
+}
+
+
 # ------------------ HTTP‑clients ------------------
 SYNC_CLIENT  = httpx.Client(timeout=120.0)
 ASYNC_CLIENT = httpx.AsyncClient(timeout=120.0)
@@ -28,48 +60,65 @@ async def close_http_clients():
     logger.info("HTTP clients closed")
 
 
-async def run_with_progress(message: Message, title: str, coro, *args):
+async def run_with_progress(message: Message, title: str, coro, progress_state: dict, *args):
     """
     Отображает сообщение с прогрессом, пока выполняется coroutine coro.
     Каждую секунду обновляет текст сообщения с индикацией выполнения.
     После завершения работы coroutine сообщение удаляется, а результат возвращается.
-    В случае если API WB долго не выдает отчет - завершает coro и выбрасывает RuntimeError.
-    Так же RuntimeError выбрасывается в случае неверного токена.
+    Выбрасывает специфичные исключения: WBTimeoutError, InvalidTokenError.
+
+    Args:
+        message: Telegram message object
+        title: Initial progress title
+        coro: Coroutine to execute
+        progress_state: Dict for sharing progress stage between coroutines
+        *args: Arguments for the coroutine
     """
-    progress_message = await message.answer(f'{title}')
-    task = asyncio.create_task(coro(*args))
-    progress_stages = ['.', '..', '...']
+    progress_state['stage'] = 'init'
+    current_text = PROGRESS_STAGES.get('init', title)
+    progress_message = await message.answer(current_text)
+    task = asyncio.create_task(coro(progress_state, *args))
+    dots = ['.', '..', '...']
     i = 0
+    last_stage = 'init'
+
     try:
         while not task.done():
-            stage = progress_stages[i % len(progress_stages)]
+            current_stage = progress_state.get('stage', 'init')
+            stage_text = PROGRESS_STAGES.get(current_stage, title)
+            dot = dots[i % len(dots)]
+
+            # Update message only if stage changed or every second for dots
             try:
-                await progress_message.edit_text(f"{title}{stage}")
+                if current_stage != last_stage:
+                    await progress_message.edit_text(f"{stage_text}")
+                    last_stage = current_stage
+                else:
+                    await progress_message.edit_text(f"{stage_text}{dot}")
             except Exception as e:
                 logger.error(f"Ошибка обновления прогресса: {e}")
+
             await asyncio.sleep(1)
             i += 1
+
             if i > 480:
                 logger.error('Canceling task, report generation timeout')
                 task.cancel()
                 try:
-                    await task  # Ждем завершения отмены
+                    await task
                 except asyncio.CancelledError:
-                    raise RuntimeError(
-                        'Сервера Wildberries не отвечают слишком долго, мы сожалеем, но это от нас не зависит\n'
-                        'Попробуйте позже.\n\n'
-                        'Количество Ваших оставшихся генераций отчетов осталось неизменным'
-                    )
+                    await progress_message.delete()
+                    raise WBTimeoutError('WB API timeout after 480 seconds')
+
         result = await task
         await progress_message.delete()
         return result
     except httpx.HTTPStatusError as e:
         logger.error(f'Ошибка запроса: {e}')
-        raise RuntimeError(
-            'У вас неверно введен токен магазина, или не выданы все нужные разрешения!\n'
-            'Пересоздайте магазин и сгенерируйте отчет заново\n\n'
-            'Количество Ваших оставшихся генераций отчетов осталось неизменным'
-        )
+        await progress_message.delete()
+        raise InvalidTokenError(f'HTTP error: {e.response.status_code}')
+    except (WBTimeoutError, InvalidTokenError, NoDataError):
+        raise
     except Exception as e:
         await progress_message.delete()
         raise e
@@ -582,23 +631,42 @@ def get_ad_expenses_report(token: str, doc_number: str, period_end: str) -> pd.D
 
 # ------------------ Генерация отчёта ------------------
 
-async def generate_report_with_params(dates: str, doc_number: str, store_token: str, store_name: str, tg_id: int, store_id: int) -> str:
-    logger.info("Старт отчёта для %s: %s",store_name,dates)
+async def generate_report_with_params(progress_state: dict, dates: str, doc_number: str, store_token: str, store_name: str, tg_id: int, store_id: int) -> str:
+    """
+    Generate report with progress tracking.
+
+    Args:
+        progress_state: Dict for updating progress stage (shared with run_with_progress)
+        dates: Period in format "DD.MM.YYYY-DD.MM.YYYY"
+        doc_number: WB document number(s)
+        store_token: WB API token
+        store_name: Store name for report header
+        tg_id: Telegram user ID
+        store_id: Store ID in database
+    """
+    logger.info("Старт отчёта для %s: %s", store_name, dates)
     start_date, end_date = get_dates_from_str(dates)
 
-    # Запускаем параллельно только быстрые запросы
-    # storage_fee и acceptance теперь извлекаются из отчёта продаж
-    # (не нужны отдельные paid_storage и acceptance_report API - экономия ~7 минут!)
-    sales_task  = fetch_sales_records_async(f"{start_date}T00:00:00",f"{end_date}T23:59:59",store_token)
-    advert_task = asyncio.to_thread(get_ad_expenses_report,store_token,doc_number,end_date)
-    cards_task  = fetch_product_cards_mapping(store_token)
+    # Stage 1: Fetch sales data (the longest operation)
+    progress_state['stage'] = 'fetch_sales'
+    sales_task = fetch_sales_records_async(f"{start_date}T00:00:00", f"{end_date}T23:59:59", store_token)
 
+    # Stage 2: Fetch ads data
+    progress_state['stage'] = 'fetch_ads'
+    advert_task = asyncio.to_thread(get_ad_expenses_report, store_token, doc_number, end_date)
+
+    # Stage 3: Fetch product cards
+    progress_state['stage'] = 'fetch_cards'
+    cards_task = fetch_product_cards_mapping(store_token)
+
+    # Run all fetches in parallel
     raw_records, adv_df, cards = await asyncio.gather(
         sales_task, advert_task, cards_task
     )
 
+    # Stage 4: Process data
+    progress_state['stage'] = 'process'
     df_raw = pd.DataFrame(raw_records)
-    # transform_sales_records теперь возвращает (sales_df, storage_df)
     sales_df, storage_df = await transform_sales_records(df_raw)
 
     # отзывы и прочее
@@ -687,6 +755,9 @@ async def generate_report_with_params(dates: str, doc_number: str, store_token: 
         - final_df["Прочие удержания"]
         - final_df["Баллы программы лояльности"]
     )
+
+    # Stage 5: Create Excel file
+    progress_state['stage'] = 'create_excel'
 
     yellow=PatternFill(fill_type="solid",start_color="FFFF00",end_color="FFFF00")
 

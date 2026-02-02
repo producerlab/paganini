@@ -120,8 +120,15 @@ async def cb_pay_for(callback: CallbackQuery, state: FSMContext, session: AsyncS
     if email is None:
         await state.set_state(Email.get)
         await callback.message.answer(
-            text='Перед оплатой, пожалуйста, укажите ваш email для отправки чека. Это необходимо в соответствии с законодательством РФ. Спасибо!',
-            reply_markup=get_main_kb()
+            text=(
+                '📧 <b>Куда отправить чек после оплаты?</b>\n\n'
+                'Email нужен для:\n'
+                '• Отправки чека об оплате\n'
+                '• Восстановления доступа при необходимости\n\n'
+                'Введите ваш email:'
+            ),
+            reply_markup=get_main_kb(),
+            parse_mode='HTML'
         )
     else:
         data = callback.data.split('_', 2)
