@@ -17,9 +17,13 @@ async def orm_check_user_reg(session: AsyncSession, tg_id: int):
     return user is not None
 
 async def orm_add_user(session: AsyncSession, user_data: dict):
+    # Convert phone to int (remove any non-digit characters first)
+    phone_str = str(user_data['phone']).replace('+', '').replace(' ', '').replace('-', '')
+    phone_int = int(phone_str) if phone_str.isdigit() else 0
+
     obj = User(
         tg_id=user_data['tg_id'],
-        phone=user_data['phone'],
+        phone=phone_int,
         first_name=user_data['first_name'],
         user_name=user_data.get('user_name'),
     )
