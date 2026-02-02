@@ -59,17 +59,22 @@ async def on_startup(bot):
     if run_param:
         await drop_db()
 
+    logger.info("Creating database tables...")
     await create_db()
+    logger.info("Database tables created")
 
     # Запускаем webhook сервер для Модуль Банка
     # Railway использует переменную PORT, локально — WEBHOOK_PORT
     webhook_host = os.getenv("WEBHOOK_HOST", "0.0.0.0")
     webhook_port = int(os.getenv("PORT", os.getenv("WEBHOOK_PORT", "8080")))
 
+    logger.info(f"Starting webhook server on {webhook_host}:{webhook_port}...")
+
     # Устанавливаем callback для обработки платежей
     set_payment_callback(lambda data: process_modulbank_payment(data, bot, session_maker))
 
     webhook_runner = await start_webhook_server(webhook_host, webhook_port)
+    logger.info("Webhook server started successfully")
 
 
 async def on_shutdown(bot):
@@ -94,11 +99,20 @@ async def main() -> None:
         dp.update.middleware(DataBaseSession(session_pool=session_maker))
         dp.message.middleware(AllowPrivateMessagesOnly())
 
+        logger.info("Deleting webhook...")
         await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook deleted")
+
+        logger.info("Setting bot commands...")
         await bot.set_my_commands(commands=user_commands, scope=types.BotCommandScopeAllPrivateChats())
+        logger.info("Bot commands set")
+
+        logger.info("Starting polling...")
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     except Exception as ex:
+        import traceback
         logger.error(f"Bot stopped with error: {ex}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
     finally:
         await bot.session.close()
         logger.info("Bot session closed")
