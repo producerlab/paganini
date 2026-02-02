@@ -183,9 +183,13 @@ async def create_bill(
         params["testing"] = "1"
 
     # Рассчитываем подпись
-    params["signature"] = calculate_signature(params, secret_key)
+    signature = calculate_signature(params, secret_key)
+    params["signature"] = signature
 
+    # Debug: логируем параметры (без полного ключа)
     logger.info(f"Modulbank: creating bill for order_id={order_id}, amount={amount}")
+    logger.debug(f"Modulbank params (без signature): {[(k, v[:20] + '...' if len(str(v)) > 20 else v) for k, v in params.items() if k != 'signature']}")
+    logger.info(f"Modulbank: signature={signature[:16]}... (len={len(signature)})")
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
