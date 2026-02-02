@@ -9,6 +9,7 @@ from services.admin import orm_get_admin_list, orm_get_user_via_phone, orm_get_l
     orm_get_last_registrations
 from services.auth_service import orm_get_user
 from services.payment import orm_add_payment, orm_add_generations
+from services.logging import logger
 
 admin_router = Router(name='admin_router')
 admin_router.message.filter(ChatTypeFilter(['private']), IsAdmin())
@@ -57,12 +58,17 @@ async def cmd_user_info_phone(msg: types.Message, state: FSMContext) -> None:
     await msg.answer(
         text=reply_text,
         reply_markup=types.ReplyKeyboardRemove()
-    )@admin_router.message(F.text == 'User по Тел')
+    )
 
 
 @admin_router.message(Phone.get, F.text)
 async def get_user_info_phone(msg: types.Message, state: FSMContext, session: AsyncSession):
-    phone = int(msg.text.strip())
+    try:
+        phone = int(msg.text.strip().replace('+', '').replace(' ', ''))
+    except ValueError:
+        await msg.answer(text='❌ Некорректный номер телефона. Введите только цифры.')
+        return
+
     await state.clear()
     user = await orm_get_user_via_phone(session, phone)
     if user is not None:
@@ -96,8 +102,13 @@ async def cmd_user_info_tg(msg: types.Message, state: FSMContext) -> None:
 
 
 @admin_router.message(Tg.get, F.text)
-async def get_user_info_tg(msg: types.Message, state: FSMContext, session: AsyncSession):
-    tg_id = int(msg.text.strip())
+async def get_user_info_by_tg(msg: types.Message, state: FSMContext, session: AsyncSession):
+    try:
+        tg_id = int(msg.text.strip())
+    except ValueError:
+        await msg.answer(text='❌ Некорректный Telegram ID. Введите только цифры.')
+        return
+
     await state.clear()
     user = await orm_get_user(session, tg_id)
     if user is not None:
@@ -120,7 +131,7 @@ async def get_user_info_tg(msg: types.Message, state: FSMContext, session: Async
 
 
 @admin_router.message(F.text == 'Добавить платеж')
-async def add_user_generations(msg: types.Message, state: FSMContext) -> None:
+async def cmd_add_payment(msg: types.Message, state: FSMContext) -> None:
     """Add payment"""
     reply_text = f'Введите Telegram id пользователя, которому Вы хотите добавить платеж!'
     await state.set_state(AddGenerations.tg_id)
@@ -131,24 +142,42 @@ async def add_user_generations(msg: types.Message, state: FSMContext) -> None:
 
 
 @admin_router.message(AddGenerations.tg_id, F.text)
-async def get_user_info_tg_id(msg: types.Message, state: FSMContext):
-    await state.update_data(tg_id=int(msg.text.strip()))
+async def get_payment_tg_id(msg: types.Message, state: FSMContext):
+    try:
+        tg_id = int(msg.text.strip())
+    except ValueError:
+        await msg.answer(text='❌ Некорректный Telegram ID. Введите только цифры.')
+        return
+
+    await state.update_data(tg_id=tg_id)
     reply_text = f'Введите сумму платежа!'
     await state.set_state(AddGenerations.amount)
     await msg.answer(text=reply_text)
 
 
 @admin_router.message(AddGenerations.amount, F.text)
-async def get_user_info_amount(msg: types.Message, state: FSMContext):
-    await state.update_data(amount=int(msg.text.strip()))
+async def get_payment_amount(msg: types.Message, state: FSMContext):
+    try:
+        amount = int(msg.text.strip())
+    except ValueError:
+        await msg.answer(text='❌ Некорректная сумма. Введите только цифры.')
+        return
+
+    await state.update_data(amount=amount)
     reply_text = f'Введите количество генераций!'
     await state.set_state(AddGenerations.generations_number)
     await msg.answer(text=reply_text)
 
 
 @admin_router.message(AddGenerations.generations_number, F.text)
-async def get_user_info_amount(msg: types.Message, state: FSMContext, session: AsyncSession):
-    await state.update_data(generations_num=int(msg.text.strip()))
+async def get_payment_generations(msg: types.Message, state: FSMContext, session: AsyncSession):
+    try:
+        generations_num = int(msg.text.strip())
+    except ValueError:
+        await msg.answer(text='❌ Некорректное количество. Введите только цифры.')
+        return
+
+    await state.update_data(generations_num=generations_num)
     data = await state.get_data()
     await orm_add_generations(session=session, tg_id=data['tg_id'], generations_num=data['generations_num'])
     await orm_add_payment(
@@ -183,7 +212,7 @@ async def show_last_payments(msg: types.Message, session: AsyncSession) -> None:
 
 
 @admin_router.message(F.text == 'Топ по генерациям')
-async def get_generations_top(msg: types.Message, session: AsyncSession) -> None:
+async def show_generations_top(msg: types.Message, session: AsyncSession) -> None:
     """Generations top"""
     users = await orm_get_generations_top(session=session, number=20)
     reply_text = f'Топ 20 пользователей по кол-ву генераций:\n'
@@ -197,7 +226,7 @@ async def get_generations_top(msg: types.Message, session: AsyncSession) -> None
 
 
 @admin_router.message(F.text == 'Последние реги')
-async def get_generations_top(msg: types.Message, session: AsyncSession) -> None:
+async def show_last_registrations(msg: types.Message, session: AsyncSession) -> None:
     """Last registrations"""
     users = await orm_get_last_registrations(session=session, number=20)
     reply_text = f'Последние регистрации:\n'

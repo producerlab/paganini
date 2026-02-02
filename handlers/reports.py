@@ -12,7 +12,7 @@ from services.auth_service import orm_get_user
 from services.logging import logger
 from keyboards.user_keyboards import get_period_kb, get_main_kb, get_manage_kb, get_menu_kb, get_after_report_kb, \
     get_quarters_kb, get_quarter_period_kb
-from services.manage_stores import orm_add_store, orm_set_store, orm_edit_store
+from services.manage_stores import orm_add_store, orm_set_store, orm_edit_store, orm_check_store_owner
 from services.payment import orm_reduce_generations
 from services.report_generator import generate_report_with_params, run_with_progress, orm_add_report
 
@@ -86,7 +86,17 @@ async def add_store_token(msg: types.Message, state: FSMContext, session: AsyncS
 @reports_router.callback_query(F.data.startswith('setstore_'))
 async def cb_set_store(callback: types.CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
     """Callback set store"""
-    store_id = int(callback.data.split('_', 1)[1])
+    try:
+        store_id = int(callback.data.split('_', 1)[1])
+    except ValueError:
+        await callback.answer("❌ Некорректный ID магазина", show_alert=True)
+        return
+
+    # Validate store ownership
+    if not await orm_check_store_owner(session, store_id, callback.from_user.id):
+        await callback.answer("❌ Магазин не найден или не принадлежит вам", show_alert=True)
+        return
+
     await orm_set_store(session, callback.from_user.id, store_id)
     reply_text = f'Магазин выбран, можете переходить к генерации отчета'
     await callback.message.answer(reply_text)
@@ -101,9 +111,20 @@ class EditStore(StatesGroup):
 
 
 @reports_router.callback_query(F.data.startswith('editstore_'))
-async def cb_edit_store(callback: types.CallbackQuery, state: FSMContext) -> None:
-    """Callback delete store"""
-    await state.update_data(store_id = int(callback.data.split('_', 1)[1]))
+async def cb_edit_store(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    """Callback edit store"""
+    try:
+        store_id = int(callback.data.split('_', 1)[1])
+    except ValueError:
+        await callback.answer("❌ Некорректный ID магазина", show_alert=True)
+        return
+
+    # Validate store ownership
+    if not await orm_check_store_owner(session, store_id, callback.from_user.id):
+        await callback.answer("❌ Магазин не найден или не принадлежит вам", show_alert=True)
+        return
+
+    await state.update_data(store_id=store_id)
     reply_text = 'Введите название магазина:'
     await callback.message.answer(reply_text)
     await state.set_state(EditStore.Name)

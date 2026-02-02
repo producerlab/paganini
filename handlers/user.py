@@ -1,3 +1,5 @@
+import re
+
 from aiogram import Router, types, F, Bot
 from aiogram.filters import Command, or_f, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -6,6 +8,9 @@ from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from keyboards.user_keyboards import get_main_kb, get_payment_kb, get_payment_check_kb
+from services.logging import logger
+
+EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 from services.auth_service import orm_get_user
 from services.payment import create_payment, check_payment, orm_check_payment_exists, orm_add_payment, \
     orm_add_generations, orm_get_email, orm_set_email, orm_this_month_bonus_exists, check_user_in_club
@@ -134,9 +139,10 @@ async def cb_pay_for(callback: CallbackQuery, state: FSMContext, session: AsyncS
 
 @user_router.message(Email.get, F.text)
 async def get_email(msg: types.Message, state: FSMContext, session: AsyncSession):
-    if '@' in msg.text and '.' in msg.text and ' ' not in msg.text:
-        print(msg.text)
-        await orm_set_email(session, msg.from_user.id, msg.text)
+    email = msg.text.strip().lower()
+    if EMAIL_REGEX.match(email):
+        logger.debug(f"User {msg.from_user.id} set email: {email}")
+        await orm_set_email(session, msg.from_user.id, email)
         await state.clear()
         await msg.answer(
             text='✅ E-mail для чеков сохранен, повторно выберите интересующий Вас тариф',

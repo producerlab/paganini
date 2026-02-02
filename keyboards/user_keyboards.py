@@ -44,6 +44,8 @@ def get_contact_reply_kb() -> ReplyKeyboardMarkup:
                 KeyboardButton(text='📲 Отправить свой номер', request_contact=True),
             ],
         ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
     )
 
     return rkb

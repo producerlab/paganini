@@ -10,7 +10,6 @@ from pathlib import Path
 from datetime import date, timedelta, datetime
 from typing import Any, Dict, List
 from aiogram.types import Message
-from sqlalchemy import column
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import Report

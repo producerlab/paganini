@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from database.models import User
+from services.logging import logger
 
 
 async def orm_get_user(session: AsyncSession, tg_id: int):
@@ -12,7 +13,7 @@ async def orm_get_user(session: AsyncSession, tg_id: int):
 
 async def orm_check_user_reg(session: AsyncSession, tg_id: int):
     user = await orm_get_user(session, tg_id)
-    print(user)
+    logger.debug(f"Check user registration: tg_id={tg_id}, found={user is not None}")
     return user is not None
 
 async def orm_add_user(session: AsyncSession, user_data: dict):

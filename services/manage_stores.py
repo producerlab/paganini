@@ -30,6 +30,13 @@ async def orm_get_store(session: AsyncSession, id: int):
     return result.scalar_one_or_none()
 
 
+async def orm_check_store_owner(session: AsyncSession, store_id: int, tg_id: int) -> bool:
+    """Check if the store belongs to the user"""
+    query = select(Store).where(Store.id == store_id, Store.tg_id == tg_id)
+    result = await session.execute(query)
+    return result.scalar_one_or_none() is not None
+
+
 async def orm_edit_store(session: AsyncSession, store_data: dict):
     query = update(Store).where(Store.id == store_data['store_id']).values(name = store_data['name'], token = store_data['token'])
     await session.execute(query)
