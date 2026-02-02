@@ -13,7 +13,8 @@ load_dotenv(find_dotenv())
 
 from middlewares.db import DataBaseSession
 
-from database.engine import create_db, drop_db, session_maker
+from database.engine import create_db, drop_db, session_maker, engine
+from sqlalchemy import text
 
 from handlers.user import user_router
 from handlers.reports import reports_router
@@ -52,6 +53,47 @@ dp.include_router(partners_router)
 webhook_runner = None
 
 
+async def run_modulbank_migration():
+    """Миграция для добавления колонок Модуль Банка (выполняется автоматически)."""
+    async with engine.begin() as conn:
+        # Проверяем тип БД и добавляем колонки если их нет
+        if 'postgresql' in str(engine.url):
+            # PostgreSQL
+            check_query = text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'payment'
+                AND column_name IN ('modulbank_bill_id', 'modulbank_transaction_id')
+            """)
+            result = await conn.execute(check_query)
+            existing = [row[0] for row in result.fetchall()]
+
+            if 'modulbank_bill_id' not in existing:
+                logger.info("Миграция: добавляю колонку modulbank_bill_id...")
+                await conn.execute(text("ALTER TABLE payment ADD COLUMN modulbank_bill_id VARCHAR(64)"))
+
+            if 'modulbank_transaction_id' not in existing:
+                logger.info("Миграция: добавляю колонку modulbank_transaction_id...")
+                await conn.execute(text("ALTER TABLE payment ADD COLUMN modulbank_transaction_id VARCHAR(64)"))
+
+            # Делаем yoo_id nullable
+            try:
+                await conn.execute(text("ALTER TABLE payment ALTER COLUMN yoo_id DROP NOT NULL"))
+            except Exception:
+                pass  # Уже nullable
+        else:
+            # SQLite
+            try:
+                await conn.execute(text("ALTER TABLE payment ADD COLUMN modulbank_bill_id VARCHAR(64)"))
+                logger.info("Миграция: добавлена колонка modulbank_bill_id")
+            except Exception:
+                pass
+            try:
+                await conn.execute(text("ALTER TABLE payment ADD COLUMN modulbank_transaction_id VARCHAR(64)"))
+                logger.info("Миграция: добавлена колонка modulbank_transaction_id")
+            except Exception:
+                pass
+
+
 async def on_startup(bot):
     global webhook_runner
 
@@ -62,6 +104,11 @@ async def on_startup(bot):
     logger.info("Creating database tables...")
     await create_db()
     logger.info("Database tables created")
+
+    # Автоматическая миграция для Модуль Банка
+    logger.info("Проверяю миграции...")
+    await run_modulbank_migration()
+    logger.info("Миграции завершены")
 
     # Запускаем webhook сервер для Модуль Банка
     # Railway использует переменную PORT, локально — WEBHOOK_PORT
