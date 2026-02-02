@@ -35,6 +35,8 @@ media = [
     InputMediaPhoto(media=FSInputFile(media_folder / '5.jpg'))
 ]
 
+doc_number_instruction = Path(os.getenv('MEDIA_ROOT')) / 'doc_number' / 'instruction.jpg'
+
 
 @reports_router.message(or_f(Command("manage_stores"), (F.text.lower().contains('управлен')), (F.text.lower().contains('магазин'))))
 async def cmd_manage_stores(msg: types.Message, session: AsyncSession) -> None:
@@ -274,7 +276,7 @@ async def cb_select_quarter_weeks(callback: CallbackQuery):
 async def cb_set_period(callback: CallbackQuery, state: FSMContext):
     period = callback.data.split('_', 1)[1]
     await state.update_data(period=period)
-    reply_text = (
+    caption = (
         '📄 <b>Введите номер документа из WB</b>\n\n'
         '<b>Где найти:</b>\n'
         '1️⃣ ЛК WB → Финансовые отчеты\n'
@@ -285,7 +287,11 @@ async def cb_set_period(callback: CallbackQuery, state: FSMContext):
         '• Два номера: <code>232411108 233498006</code>\n'
         '• Если документа нет: введите <code>0</code>'
     )
-    await callback.message.answer(reply_text, parse_mode='HTML')
+    await callback.message.answer_photo(
+        photo=FSInputFile(doc_number_instruction),
+        caption=caption,
+        parse_mode='HTML'
+    )
     await state.set_state(Report.Doc_num)
 
 
