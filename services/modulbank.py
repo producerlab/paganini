@@ -20,14 +20,14 @@ MODULBANK_API_URL = "https://pay.modulbank.ru/api/v1"
 
 
 def get_merchant_id() -> str:
-    return os.getenv("MODULBANK_MERCHANT_ID", "")
+    return os.getenv("MODULBANK_MERCHANT_ID", "").strip()
 
 
 def get_secret_key() -> str:
     """Возвращает секретный ключ в зависимости от режима (тест/боевой)."""
     if os.getenv("MODULBANK_TEST_MODE", "1") == "1":
-        return os.getenv("MODULBANK_TEST_SECRET_KEY", "")
-    return os.getenv("MODULBANK_SECRET_KEY", "")
+        return os.getenv("MODULBANK_TEST_SECRET_KEY", "").strip()
+    return os.getenv("MODULBANK_SECRET_KEY", "").strip()
 
 
 def get_webhook_url() -> str:
