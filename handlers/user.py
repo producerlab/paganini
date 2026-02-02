@@ -137,7 +137,7 @@ async def cb_pay_for(callback: CallbackQuery, state: FSMContext, session: AsyncS
     else:
         data = callback.data.split('_', 2)
         generations_num = int(data[1])
-        amount = int(data[2])
+        amount = int(float(data[2]))  # float first, then int (handles "490.0")
         await process_payment_request(callback.message, callback.from_user.id, generations_num, amount, email)
     await callback.answer()
 
@@ -187,7 +187,7 @@ async def get_email(msg: types.Message, state: FSMContext, session: AsyncSession
         if generations_num and amount:
             # Сразу создаём платёж
             await msg.answer(text='✅ E-mail сохранён. Создаю счёт на оплату...')
-            await process_payment_request(msg, msg.from_user.id, int(generations_num), int(amount), email)
+            await process_payment_request(msg, msg.from_user.id, int(generations_num), int(float(amount)), email)
         else:
             # Если данных нет — просим выбрать тариф
             await msg.answer(
