@@ -321,14 +321,17 @@ def parse_callback_data(data: dict) -> dict:
         Словарь с распознанными полями:
         - state: COMPLETE или FAILED
         - transaction_id: ID транзакции
-        - order_id: ID заказа (custom_order_id)
+        - order_id: Наш custom_order_id (paganini_...)
         - amount: Сумма платежа
         - is_success: True если оплата успешна
     """
+    # ВАЖНО: Модуль Банк возвращает order_id как свой внутренний ID (bill_1, bill_2...),
+    # а наш custom_order_id — в поле custom_order_id
     return {
         "state": data.get("state"),
         "transaction_id": data.get("transaction_id"),
-        "order_id": data.get("order_id"),
+        "order_id": data.get("custom_order_id"),  # Используем custom_order_id!
+        "modulbank_order_id": data.get("order_id"),  # Внутренний ID Модуль Банка
         "amount": data.get("amount"),
         "currency": data.get("currency", "RUB"),
         "client_email": data.get("client_email"),
