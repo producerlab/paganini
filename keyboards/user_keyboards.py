@@ -135,32 +135,22 @@ def get_after_report_kb() -> InlineKeyboardMarkup:
 
 
 def get_payment_kb() -> InlineKeyboardMarkup:
-    """Get payment kb"""
+    """Get payment kb with Year plan highlighted"""
     ikb = InlineKeyboardBuilder()
-    tariffs = {
-        'one': {
-            'name': 'Разовый',
-            'price': 490.00,
-            'generations_num': 1
-        },
-        'month': {
-            'name': 'Месяц',
-            'price': 1690.00,
-            'generations_num': 4
-        },'quarter': {
-            'name': 'Квартал',
-            'price': 4990.00,
-            'generations_num': 12
-        },'year': {
-            'name': 'Год',
-            'price': 17990.00,
-            'generations_num': 52
-        },
-    }
-    for tariff in tariffs.values():
+    tariffs = [
+        {'name': 'Разовый', 'price': 490, 'generations_num': 1, 'highlight': False},
+        {'name': 'Месяц', 'price': 1690, 'generations_num': 4, 'highlight': False},
+        {'name': 'Квартал', 'price': 4990, 'generations_num': 12, 'highlight': False},
+        {'name': 'Год', 'price': 17990, 'generations_num': 52, 'highlight': True},
+    ]
+    for tariff in tariffs:
+        if tariff['highlight']:
+            text = f'⭐️ Оплатить {tariff["name"]} — выгодно!'
+        else:
+            text = f'Оплатить {tariff["name"]}'
         ikb.add(
             InlineKeyboardButton(
-                text=f'Оплатить {tariff["name"]}',
+                text=text,
                 callback_data=f'payfor_{tariff["generations_num"]}_{tariff["price"]}'
             )
         )

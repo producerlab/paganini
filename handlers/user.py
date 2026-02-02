@@ -83,6 +83,7 @@ async def cb_payment(callback: types.CallbackQuery) -> None:
     """Command payment"""
     reply_text = (
         '💳 <b>Тарифы и цены</b>\n\n'
+
         '📦 <b>Разовый</b>\n'
         '├─ 🔁 Генераций: 1\n'
         '├─ 💰 Цена: 490 ₽\n'
@@ -98,10 +99,11 @@ async def cb_payment(callback: types.CallbackQuery) -> None:
         '├─ 💰 Цена: 4 990 ₽\n'
         '└─ 📊 За генерацию: 416 ₽\n\n'
 
-        '📆 <b>Год</b>\n'
+        '⭐️ <b>Год</b> <i>— выгодный!</i>\n'
         '├─ 🔁 Генераций: 52\n'
         '├─ 💰 Цена: 17 990 ₽\n'
-        '└─ 📊 За генерацию: 346 ₽'
+        '├─ 📊 За генерацию: <b>346 ₽</b>\n'
+        '└─ 💎 Экономия: <b>7 490 ₽</b> (−29%)'
     )
     await callback.answer()
     await callback.message.answer(
