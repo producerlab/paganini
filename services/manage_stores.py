@@ -2,13 +2,17 @@ from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import Store, User
+from services.crypto import encrypt_token, decrypt_token
 
 
 async def orm_add_store(session: AsyncSession, store_data: dict):
+    # Encrypt token before storing
+    encrypted_token = encrypt_token(store_data['token'])
+
     obj = Store(
         tg_id=store_data['tg_id'],
         name=store_data['name'],
-        token=store_data['token'],
+        token=encrypted_token,
     )
     session.add(obj)
     await session.commit()
@@ -38,9 +42,17 @@ async def orm_check_store_owner(session: AsyncSession, store_id: int, tg_id: int
 
 
 async def orm_edit_store(session: AsyncSession, store_data: dict):
-    query = update(Store).where(Store.id == store_data['store_id']).values(name = store_data['name'], token = store_data['token'])
+    # Encrypt token before storing
+    encrypted_token = encrypt_token(store_data['token'])
+
+    query = update(Store).where(Store.id == store_data['store_id']).values(name = store_data['name'], token = encrypted_token)
     await session.execute(query)
     await session.commit()
+
+
+def get_decrypted_token(store: Store) -> str:
+    """Get decrypted token from a Store object."""
+    return decrypt_token(store.token)
 
 
 async def orm_set_store(session: AsyncSession, tg_id: int, store_id: int):

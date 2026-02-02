@@ -11,10 +11,11 @@ from pathlib import Path
 from services.auth_service import orm_get_user
 from services.logging import logger
 from keyboards.user_keyboards import get_period_kb, get_main_kb, get_manage_kb, get_menu_kb, get_after_report_kb, \
-    get_quarters_kb, get_quarter_period_kb
-from services.manage_stores import orm_add_store, orm_set_store, orm_edit_store, orm_check_store_owner
+    get_quarters_kb, get_quarter_period_kb, get_no_generations_kb, get_error_kb, get_onboarding_kb
+from services.manage_stores import orm_add_store, orm_set_store, orm_edit_store, orm_check_store_owner, get_decrypted_token
 from services.payment import orm_reduce_generations
-from services.report_generator import generate_report_with_params, run_with_progress, orm_add_report
+from services.report_generator import generate_report_with_params, run_with_progress, orm_add_report, \
+    InvalidTokenError, WBTimeoutError, NoDataError
 
 reports_router = Router(name="reports_router")
 
@@ -49,10 +50,25 @@ async def cb_manage_stores(callback: types.CallbackQuery, session: AsyncSession)
 
 
 async def handle_manage_stores(msg: types.Message, tg_id, session: AsyncSession) -> None:
-    reply_text = '🏪 Управление магазинами!'
+    from services.manage_stores import orm_get_user_stores
+    stores = await orm_get_user_stores(session, tg_id)
+
+    if not stores:
+        reply_text = (
+            '🏪 <b>У вас пока нет магазинов</b>\n\n'
+            'Добавьте свой первый магазин WB, чтобы начать генерировать отчеты.\n\n'
+            '<b>Что потребуется:</b>\n'
+            '• Название магазина\n'
+            '• API-токен из ЛК Wildberries\n\n'
+            '💡 Токен можно создать в ЛК WB → Настройки → Доступ к API'
+        )
+    else:
+        reply_text = '🏪 <b>Управление магазинами</b>'
+
     await msg.answer(
         text=reply_text,
-        reply_markup=await get_manage_kb(session, tg_id)
+        reply_markup=await get_manage_kb(session, tg_id),
+        parse_mode='HTML'
     )
 
 @reports_router.callback_query(F.data == 'cb_btn_add_store')
@@ -76,11 +92,28 @@ async def add_store_name(msg: types.Message, state: FSMContext):
 async def add_store_token(msg: types.Message, state: FSMContext, session: AsyncSession):
     await state.update_data(token=msg.text)
     data = await state.get_data()
-    reply_text = 'Магазин успешно добавлен!\n\n'
-    reply_text += 'Можете переходить к генерации отчета!'
     await orm_add_store(session, data)
-    await state.clear()
-    await msg.answer(text=reply_text, reply_markup=get_menu_kb())
+
+    from_onboarding = data.get('from_onboarding', False)
+
+    if from_onboarding:
+        # Continue onboarding flow
+        reply_text = (
+            '✅ <b>Магазин успешно добавлен!</b>\n\n'
+            '<b>Шаг 2:</b> Создайте первый отчет\n'
+            'Выберите период и получите детальную расшифровку финансов.\n\n'
+            '💡 <i>Токен хранится в зашифрованном виде и используется только для получения данных из WB</i>'
+        )
+        await state.clear()
+        await msg.answer(text=reply_text, reply_markup=get_onboarding_kb(2), parse_mode='HTML')
+    else:
+        reply_text = (
+            '✅ <b>Магазин успешно добавлен!</b>\n\n'
+            'Можете переходить к генерации отчета!\n\n'
+            '💡 <i>Токен хранится в зашифрованном виде и используется только для получения данных из WB</i>'
+        )
+        await state.clear()
+        await msg.answer(text=reply_text, reply_markup=get_menu_kb(), parse_mode='HTML')
 
 
 @reports_router.callback_query(F.data.startswith('setstore_'))
@@ -174,23 +207,32 @@ async def cb_generate_report(callback: types.CallbackQuery, session: AsyncSessio
 async def handle_generate_report(msg: types.Message, tg_id, session: AsyncSession, state: FSMContext) -> None:
     user = await orm_get_user(session, tg_id)
     if user.generations_left <= 0 and user.role not in {'admin', 'whitelist'}:
-        reply_text = f'❌ {user.first_name}, у Вас кончились генерации отчетов, оплатите бота'
+        reply_text = (
+            f'📊 <b>{user.first_name}, генерации закончились</b>\n\n'
+            f'Сделано отчетов: {user.generations_made}\n\n'
+            'Пополните баланс или пригласите друзей для получения бонусов.'
+        )
         await msg.answer(
             text=reply_text,
-            reply_markup=get_main_kb()
+            reply_markup=get_no_generations_kb(),
+            parse_mode='HTML'
         )
     elif user.selected_store_id:
-        reply_text = f'{user.first_name}, для генерации отчета у Вас выбран магазин "{user.selected_store.name}"\n'
-        reply_text += 'Для изменения магазина перейдите в управление магазинами /manage_stores\n\n'
-        reply_text += f'Осталось генераций: {user.generations_left}\n\n'
-        reply_text += 'Чтобы создать отчет - выберите период за который его нужно сгенерировать. 👇'
+        reply_text = (
+            f'{user.first_name}, для генерации отчета у Вас выбран магазин "<b>{user.selected_store.name}</b>"\n'
+            'Для изменения магазина перейдите в управление магазинами /manage_stores\n\n'
+            f'📊 Осталось генераций: {user.generations_left}\n\n'
+            'Чтобы создать отчет — выберите период за который его нужно сгенерировать 👇\n\n'
+            '💡 <i>Данные за последнюю неделю появляются в WB с задержкой 2-3 дня</i>'
+        )
         await msg.answer(
             text=reply_text,
-            reply_markup=get_period_kb()
+            reply_markup=get_period_kb(),
+            parse_mode='HTML'
         )
         await state.set_state(Report.Period)
         await state.update_data(
-            token=user.selected_store.token,
+            token=get_decrypted_token(user.selected_store),
             name=user.selected_store.name,
             user_id=user.tg_id,
             store_id=user.selected_store.id,
@@ -231,10 +273,18 @@ async def cb_select_quarter_weeks(callback: CallbackQuery):
 async def cb_set_period(callback: CallbackQuery, state: FSMContext):
     period = callback.data.split('_', 1)[1]
     await state.update_data(period=period)
-    reply_text = 'Пожалуйста, введите номер документа!\n\n'
-    reply_text += 'Чтобы его получить в личном кабинете WB зайдите в Финансовые отчеты, в колонке Прочие удержания нажмите на сумму, Вам нужен номер документа с комментарием Оказание услуг «ВБ.Продвижение»\n\n'
-    reply_text += 'Если у Вас такого нету введите 123, если у Вас 2 номера документа - введите их через пробел, например «232411108 233498006»'
-    await callback.message.answer(reply_text)
+    reply_text = (
+        '📄 <b>Введите номер документа из WB</b>\n\n'
+        '<b>Где найти:</b>\n'
+        '1️⃣ ЛК WB → Финансовые отчеты\n'
+        '2️⃣ Колонка "Прочие удержания" → нажать на сумму\n'
+        '3️⃣ Найти строку "ВБ.Продвижение"\n\n'
+        '<b>Формат ввода:</b>\n'
+        '• Один номер: <code>232411108</code>\n'
+        '• Два номера: <code>232411108 233498006</code>\n'
+        '• Если документа нет: введите <code>0</code>'
+    )
+    await callback.message.answer(reply_text, parse_mode='HTML')
     await state.set_state(Report.Doc_num)
 
 
@@ -256,21 +306,88 @@ async def cmd_set_doc_num(msg: types.Message, state: FSMContext, session: AsyncS
     date = datetime.strptime(dates.split('-')[0], "%d.%m.%Y").date()
 
     try:
+        progress_state = {}
         file_path = await run_with_progress(
             msg,
             "⏳ Формируется отчет, пожалуйста, подождите",
             generate_report_with_params,
+            progress_state,
             dates, doc_num, store_token, store_name, tg_id, store_id
+        )
+        await msg.answer(
+            text=(
+                f'✅ <b>Отчет готов!</b>\n\n'
+                f'🏪 Магазин: {store_name}\n'
+                f'📅 Период: {dates}'
+            ),
+            parse_mode='HTML'
         )
         await msg.answer_document(
             FSInputFile(file_path),
             reply_markup=get_after_report_kb()
         )
+        # Check if this is the first report for tip
+        user = await orm_get_user(session, tg_id)
+        is_first_report = user.generations_made == 0
+
         await orm_add_report(session, tg_id, date, file_path, store_id)
         await orm_reduce_generations(session, tg_id)
+
+        if is_first_report:
+            await msg.answer(
+                text='💡 <i>Поздравляем с первым отчетом! Все ваши отчеты сохраняются и доступны для повторного скачивания.</i>',
+                parse_mode='HTML'
+            )
+    except InvalidTokenError:
+        logger.error(f"Invalid token for user {tg_id}")
+        await msg.answer(
+            text=(
+                '❌ <b>Ошибка токена WB</b>\n\n'
+                'Токен магазина неверный или не имеет нужных разрешений.\n\n'
+                '<b>Что делать:</b>\n'
+                '1. Пересоздайте токен в ЛК WB\n'
+                '2. Убедитесь, что выбраны разрешения:\n'
+                '   Контент, Статистика, Аналитика, Продвижение\n\n'
+                '💡 Количество генераций осталось неизменным'
+            ),
+            reply_markup=get_error_kb('invalid_token'),
+            parse_mode='HTML'
+        )
+    except WBTimeoutError:
+        logger.error(f"WB API timeout for user {tg_id}")
+        await msg.answer(
+            text=(
+                '❌ <b>Сервер WB не отвечает</b>\n\n'
+                'API Wildberries слишком долго обрабатывает запрос.\n\n'
+                '<b>Что делать:</b>\n'
+                'Попробуйте повторить генерацию через 5-10 минут.\n\n'
+                '💡 Количество генераций осталось неизменным'
+            ),
+            reply_markup=get_error_kb('timeout'),
+            parse_mode='HTML'
+        )
+    except NoDataError:
+        logger.error(f"No data for user {tg_id}, period {dates}")
+        await msg.answer(
+            text=(
+                '❌ <b>Нет данных за выбранный период</b>\n\n'
+                'WB API не вернул данные о продажах за указанную неделю.\n\n'
+                '<b>Возможные причины:</b>\n'
+                '• В этот период не было продаж\n'
+                '• Данные еще не появились в WB (задержка 2-3 дня)\n\n'
+                '💡 Попробуйте выбрать другой период'
+            ),
+            reply_markup=get_error_kb('no_data'),
+            parse_mode='HTML'
+        )
     except Exception as e:
         logger.error(f"Report generation failed for user {tg_id}: {e}", exc_info=True)
         await msg.answer(
-            text=f"❌ Ошибка при формировании отчета, скорее всего вызванная проблемами с API WB, попробуйте чуть позже\n\nКоличество Ваших генераций осталось неизменным!",
-            reply_markup=get_menu_kb()
+            text=(
+                '❌ <b>Ошибка при формировании отчета</b>\n\n'
+                'Произошла непредвиденная ошибка. Попробуйте позже или обратитесь в поддержку.\n\n'
+                '💡 Количество генераций осталось неизменным'
+            ),
+            reply_markup=get_error_kb('timeout'),
+            parse_mode='HTML'
         )

@@ -5,7 +5,10 @@ from database.models import Base
 from services.logging import logger
 
 
-logger.info(f'Адрес DB {os.getenv("DB_URL")}')
+# Don't log full DB_URL as it may contain credentials
+db_url = os.getenv('DB_URL', '')
+db_host = db_url.split('@')[-1].split('/')[0] if '@' in db_url else 'configured'
+logger.info(f'Database host: {db_host}')
 
 engine = create_async_engine(
     os.getenv('DB_URL'),
