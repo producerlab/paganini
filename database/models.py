@@ -12,7 +12,7 @@ class User(Base):
     __tablename__ = 'user'
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    tg_id: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    tg_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
     phone: Mapped[int] = mapped_column(BigInteger, nullable=False)
     email: Mapped[str] = mapped_column(String(128))
     first_name: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -42,7 +42,7 @@ class Store(Base):
     __tablename__ = 'store'
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    tg_id: Mapped[int] = mapped_column(ForeignKey("user.tg_id"), nullable=False)
+    tg_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("user.tg_id"), nullable=False)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     token: Mapped[str] = mapped_column(String(512), nullable=False)
 
@@ -54,7 +54,7 @@ class Report(Base):
     __tablename__ = 'report'
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    tg_id: Mapped[int] = mapped_column(ForeignKey("user.tg_id"), nullable=False)
+    tg_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("user.tg_id"), nullable=False)
     date_of_week: Mapped[Date] = mapped_column(Date, nullable=False)
     report_path: Mapped[str] = mapped_column(String, nullable=False)
     store_id: Mapped[int] = mapped_column(ForeignKey("store.id"), nullable=False)
@@ -64,8 +64,8 @@ class Ref(Base):
     __tablename__ = 'ref'
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    referral_id: Mapped[int] = mapped_column(nullable=False, unique=True)
-    referrer_id: Mapped[int] = mapped_column(ForeignKey("user.tg_id"), nullable=False)
+    referral_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
+    referrer_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("user.tg_id"), nullable=False)
 
     __table_args__ = (
         Index('idx_referral_unique', 'referral_id', unique=True),  # явное указание индекса
@@ -76,7 +76,7 @@ class Payment(Base):
     __tablename__ = 'payment'
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    tg_id: Mapped[int] = mapped_column(ForeignKey("user.tg_id"), nullable=False)
+    tg_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("user.tg_id"), nullable=False)
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     generations_num: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     source: Mapped[str] = mapped_column((String(16)), nullable=False)
