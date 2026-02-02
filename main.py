@@ -65,8 +65,9 @@ async def on_startup(bot):
 
     # Запускаем webhook сервер для Модуль Банка
     # Railway использует переменную PORT, локально — WEBHOOK_PORT
-    webhook_host = os.getenv("WEBHOOK_HOST", "0.0.0.0")
-    webhook_port = int(os.getenv("PORT", os.getenv("WEBHOOK_PORT", "8080")))
+    # Используем "or" чтобы пустая строка тоже заменялась на default
+    webhook_host = os.getenv("WEBHOOK_HOST") or "0.0.0.0"
+    webhook_port = int(os.getenv("PORT") or os.getenv("WEBHOOK_PORT") or "8080")
 
     logger.info(f"Starting webhook server on {webhook_host}:{webhook_port}...")
 
