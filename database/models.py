@@ -1,6 +1,6 @@
 from typing import Optional
 
-from sqlalchemy import DateTime, Date, String, Text, Integer, Boolean, func, ForeignKey, Index
+from sqlalchemy import DateTime, Date, String, Text, Integer, BigInteger, Boolean, func, ForeignKey, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -13,7 +13,7 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     tg_id: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
-    phone: Mapped[int] = mapped_column(Integer, nullable=False)
+    phone: Mapped[int] = mapped_column(BigInteger, nullable=False)
     email: Mapped[str] = mapped_column(String(128))
     first_name: Mapped[str] = mapped_column(String(64), nullable=False)
     user_name: Mapped[Optional[str]] = mapped_column(String(64))
