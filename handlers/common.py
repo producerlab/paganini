@@ -36,7 +36,14 @@ async def cmd_start(msg: types.Message, state: FSMContext, session: AsyncSession
 
     user_id = int(msg.from_user.id)
     is_registered = await auth_service.orm_check_user_reg(session, user_id)
-    member = await msg.bot.get_chat_member(CHANNEL_USERNAME, user_id)
+
+    # Check channel subscription (may fail if bot is not channel admin)
+    is_subscribed = True  # Default to True if check fails
+    try:
+        member = await msg.bot.get_chat_member(CHANNEL_USERNAME, user_id)
+        is_subscribed = member.status in ["member", "administrator", "creator"]
+    except Exception as e:
+        logger.warning(f"Cannot check subscription for {user_id}: {e}")
 
     if len(msg.text.split()) > 1:
         args = msg.text.split()[1]
@@ -53,7 +60,7 @@ async def cmd_start(msg: types.Message, state: FSMContext, session: AsyncSession
             text=reply_text,
             reply_markup=get_menu_kb()
         )
-    elif member.status not in ["member", "administrator", "creator"]:
+    elif not is_subscribed:
         reply_text = f'Приветствую, {msg.from_user.first_name}!\n'
         reply_text += f'Для доступа к боту подпишитесь на канал {CHANNEL_USERNAME}, затем нажмите на кнопку "Проверить подписку". 👇'
         await msg.answer(
@@ -69,8 +76,14 @@ async def cmd_start(msg: types.Message, state: FSMContext, session: AsyncSession
 
 @common_router.callback_query(F.data == 'check_subscription')
 async def check_subscription(callback: types.CallbackQuery, state: FSMContext):
-    member = await callback.bot.get_chat_member(CHANNEL_USERNAME, callback.from_user.id)
-    if member.status not in ["member", "administrator", "creator"]:
+    try:
+        member = await callback.bot.get_chat_member(CHANNEL_USERNAME, callback.from_user.id)
+        is_subscribed = member.status in ["member", "administrator", "creator"]
+    except Exception as e:
+        logger.warning(f"Cannot check subscription for {callback.from_user.id}: {e}")
+        is_subscribed = True  # Allow if check fails
+
+    if not is_subscribed:
         await callback.answer("❌ Вы ещё не подписаны.", show_alert=True)
     else:
         await state.set_state(Registration.contact)
