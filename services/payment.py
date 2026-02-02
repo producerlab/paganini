@@ -1,18 +1,19 @@
 from datetime import datetime
+from typing import Optional
 
-import yookassa
-import uuid
 import os
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 
 from sqlalchemy import update, select, exists
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import sessionmaker
 
 from database.models import User, Payment
 from services.auth_service import orm_get_user
-
-yookassa.Configuration.configure(f'{os.getenv("UKASSA_ACCOUNT_ID")}', f'{os.getenv("UKASSA_SECRET_KEY")}')
+from services.logging import logger
+from services import modulbank
+from keyboards.user_keyboards import get_main_kb
 
 
 async def orm_reduce_generations(session: AsyncSession, tg_id:int):
@@ -35,59 +36,127 @@ async def orm_set_email(session: AsyncSession, tg_id: int, email: str):
     await session.commit()
 
 
-def create_payment(tg_id, generations_num, amount, email):
-    id_key = str(uuid.uuid4())
-    return_url = f'https://t.me/{os.getenv("BOT_USERNAME")}'
-    payment = yookassa.Payment.create(
-    {
-        'amount': {
-            'value': amount,
-            'currency': "RUB"
-        },
-        'confirmation': {
-            'type': 'redirect',
-            'return_url': return_url
-        },
-        'capture': True,
-        'description': 'Оплата генераций отчетов в боте Paganini',
-        'metadata': {
-            'user_id': tg_id,
-            'generations_num': generations_num,
-            'amount': amount
-        },
-        'receipt': {
-            'customer': {
-                'email': email
-            },
-            'items': [
-                {
-                  'description': f'Оплата генераций отчетов в боте Paganini: {generations_num}',
-                  'quantity': 1,
-                  'amount': {
-                    'value': amount,
-                    'currency': 'RUB'
-                  },
-                  "vat_code": 1,
-                  "payment_mode": "full_prepayment",
-                  "payment_subject": "commodity"
-                },
-            ]
-        }
-    }, id_key)
+async def create_payment(tg_id: int, generations_num: int, amount: int, email: str):
+    """
+    Создание платежа через Модуль Банк.
 
-    return payment.confirmation.confirmation_url, payment.id
+    Формат order_id: paganini_{tg_id}_{generations}_{amount}_{timestamp}
+
+    Returns:
+        Tuple (payment_url, bill_id) или (None, error_message)
+    """
+    import time
+    custom_order_id = f"paganini_{tg_id}_{generations_num}_{amount}_{int(time.time())}"
+
+    payment_url, bill_id, error = await modulbank.create_bill(
+        email=email,
+        amount=int(amount),
+        generations_num=int(generations_num),
+        tg_id=tg_id,
+        custom_order_id=custom_order_id
+    )
+
+    if error:
+        logger.error(f"Ошибка создания платежа для {tg_id}: {error}")
+        return None, error
+
+    return payment_url, bill_id
 
 
-def check_payment(payment_id):
-    payment = yookassa.Payment.find_one(payment_id)
-    if payment.status == 'succeeded':
-        return payment.metadata
-    else:
-        return False
+def parse_order_id(order_id: str) -> Optional[dict]:
+    """
+    Парсинг order_id для получения данных платежа.
+
+    Формат: paganini_{tg_id}_{generations}_{amount}_{timestamp}
+    """
+    try:
+        parts = order_id.split('_')
+        if len(parts) >= 4 and parts[0] == 'paganini':
+            return {
+                'tg_id': int(parts[1]),
+                'generations_num': int(parts[2]),
+                'amount': int(parts[3])
+            }
+    except (ValueError, IndexError):
+        pass
+    return None
+
+
+async def process_modulbank_payment(payment_data: dict, bot: Bot, session_maker: sessionmaker):
+    """
+    Обработка успешного платежа от webhook Модуль Банка.
+
+    Вызывается из webhook_server.py при получении уведомления.
+    """
+    if not payment_data.get('is_success'):
+        return
+
+    order_id = payment_data.get('order_id', '')
+    transaction_id = payment_data.get('transaction_id', '')
+
+    # Парсим данные из order_id
+    parsed = parse_order_id(order_id)
+    if not parsed:
+        logger.error(f"Не удалось распарсить order_id: {order_id}")
+        return
+
+    tg_id = parsed['tg_id']
+    generations_num = parsed['generations_num']
+    amount = parsed['amount']
+
+    async with session_maker() as session:
+        # Проверяем, не обработан ли уже этот платёж
+        if await orm_check_modulbank_payment_exists(session, transaction_id):
+            logger.warning(f"Платёж {transaction_id} уже обработан")
+            return
+
+        # Обрабатываем реферальный бонус
+        from services.refs import orm_get_referrer, orm_add_bonus
+        referrer = await orm_get_referrer(session, tg_id)
+        if referrer is not None:
+            await orm_add_bonus(session, referrer, amount)
+
+        # Добавляем генерации пользователю
+        await orm_add_generations(session, tg_id, generations_num)
+
+        # Записываем платёж в БД
+        await orm_add_payment(
+            session=session,
+            tg_id=tg_id,
+            amount=amount,
+            generations_num=generations_num,
+            source='bot',
+            yoo_id=None,
+            modulbank_bill_id=order_id,
+            modulbank_transaction_id=transaction_id
+        )
+
+        logger.info(f"Платёж {transaction_id} обработан: {generations_num} генераций для {tg_id}")
+
+    # Уведомляем пользователя
+    try:
+        await bot.send_message(
+            tg_id,
+            f'✅ Оплата прошла успешно!\n\n'
+            f'Вам добавлено <b>{generations_num}</b> генераций отчётов.\n\n'
+            f'Спасибо за покупку! 🎉',
+            reply_markup=get_main_kb(),
+            parse_mode='HTML'
+        )
+    except Exception as e:
+        logger.error(f"Не удалось отправить уведомление пользователю {tg_id}: {e}")
 
 
 async def orm_check_payment_exists(session: AsyncSession, yoo_id: str) -> bool:
+    """Проверка существования платежа по YooKassa ID (legacy)."""
     query = select(exists().where(Payment.yoo_id == yoo_id))
+    result = await session.execute(query)
+    return result.scalar()
+
+
+async def orm_check_modulbank_payment_exists(session: AsyncSession, transaction_id: str) -> bool:
+    """Проверка существования платежа по Модуль Банк transaction_id."""
+    query = select(exists().where(Payment.modulbank_transaction_id == transaction_id))
     result = await session.execute(query)
     return result.scalar()
 
@@ -98,13 +167,25 @@ async def orm_add_generations(session: AsyncSession, tg_id: int, generations_num
     await session.commit()
 
 
-async def orm_add_payment(session: AsyncSession, tg_id: int, amount: int, generations_num: int, source:str, yoo_id: str):
+async def orm_add_payment(
+    session: AsyncSession,
+    tg_id: int,
+    amount: int,
+    generations_num: int,
+    source: str,
+    yoo_id: Optional[str] = None,
+    modulbank_bill_id: Optional[str] = None,
+    modulbank_transaction_id: Optional[str] = None
+):
+    """Добавление записи о платеже."""
     obj = Payment(
         tg_id=tg_id,
         amount=amount,
         generations_num=generations_num,
         source=source,
-        yoo_id=yoo_id
+        yoo_id=yoo_id,
+        modulbank_bill_id=modulbank_bill_id,
+        modulbank_transaction_id=modulbank_transaction_id
     )
     session.add(obj)
     await session.commit()

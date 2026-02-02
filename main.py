@@ -23,6 +23,8 @@ from handlers.common import common_router
 
 from common.bot_commands_list import user_commands
 from services.report_generator import close_http_clients
+from services.webhook_server import start_webhook_server, stop_webhook_server, set_payment_callback
+from services.payment import process_modulbank_payment
 
 # logging settings
 logging.basicConfig(
@@ -46,8 +48,12 @@ dp.include_router(reports_router)
 dp.include_router(admin_router)
 dp.include_router(partners_router)
 
+# Глобальная переменная для webhook runner
+webhook_runner = None
+
 
 async def on_startup(bot):
+    global webhook_runner
 
     run_param = False
     if run_param:
@@ -55,9 +61,25 @@ async def on_startup(bot):
 
     await create_db()
 
+    # Запускаем webhook сервер для Модуль Банка
+    # Railway использует переменную PORT, локально — WEBHOOK_PORT
+    webhook_host = os.getenv("WEBHOOK_HOST", "0.0.0.0")
+    webhook_port = int(os.getenv("PORT", os.getenv("WEBHOOK_PORT", "8080")))
+
+    # Устанавливаем callback для обработки платежей
+    set_payment_callback(lambda data: process_modulbank_payment(data, bot, session_maker))
+
+    webhook_runner = await start_webhook_server(webhook_host, webhook_port)
+
 
 async def on_shutdown(bot):
+    global webhook_runner
     logger.info("Bot is shutting down...")
+
+    # Останавливаем webhook сервер
+    if webhook_runner:
+        await stop_webhook_server(webhook_runner)
+
     await close_http_clients()
 
 

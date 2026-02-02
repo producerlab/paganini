@@ -80,4 +80,8 @@ class Payment(Base):
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     generations_num: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     source: Mapped[str] = mapped_column((String(16)), nullable=False)
-    yoo_id: Mapped[str] = mapped_column(String(64))
+    # Универсальное поле для ID платежа (YooKassa или Модуль Банк)
+    yoo_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Поля для Модуль Банка
+    modulbank_bill_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    modulbank_transaction_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)

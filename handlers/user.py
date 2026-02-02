@@ -7,14 +7,15 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from keyboards.user_keyboards import get_main_kb, get_payment_kb, get_payment_check_kb
+from keyboards.user_keyboards import get_main_kb, get_payment_kb
 from services.logging import logger
 
 EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 from services.auth_service import orm_get_user
-from services.payment import create_payment, check_payment, orm_check_payment_exists, orm_add_payment, \
-    orm_add_generations, orm_get_email, orm_set_email, orm_this_month_bonus_exists, check_user_in_club
-from services.refs import orm_get_referrer, orm_add_bonus
+from services.payment import (
+    create_payment, orm_add_payment, orm_add_generations,
+    orm_get_email, orm_set_email, orm_this_month_bonus_exists, check_user_in_club
+)
 
 user_router = Router(name="user_router")
 
@@ -118,6 +119,9 @@ class Email(StatesGroup):
 async def cb_pay_for(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     email = await orm_get_email(session, callback.from_user.id)
     if email is None:
+        # Сохраняем данные о тарифе в state для использования после ввода email
+        data = callback.data.split('_', 2)
+        await state.update_data(generations_num=data[1], amount=data[2])
         await state.set_state(Email.get)
         await callback.message.answer(
             text=(
@@ -132,15 +136,37 @@ async def cb_pay_for(callback: CallbackQuery, state: FSMContext, session: AsyncS
         )
     else:
         data = callback.data.split('_', 2)
-        generations_num = data[1]
-        amount = data[2]
-        payment_url, payment_id = create_payment(callback.from_user.id, generations_num, amount, email)
-        reply_text = 'Ваша ссылка на оплату:\n'
-        reply_text += f'{payment_url}\n\n'
-        reply_text += 'После того как проведете оплату нажмите на кнопку 👇, чтобы проверить платеж'
-        await callback.message.answer(
+        generations_num = int(data[1])
+        amount = int(data[2])
+        await process_payment_request(callback.message, callback.from_user.id, generations_num, amount, email)
+    await callback.answer()
+
+
+async def process_payment_request(message, tg_id: int, generations_num: int, amount: int, email: str):
+    """Обработка запроса на создание платежа."""
+    payment_url, result = await create_payment(tg_id, generations_num, amount, email)
+
+    if payment_url:
+        reply_text = (
+            '💳 <b>Счёт на оплату создан!</b>\n\n'
+            f'📦 Тариф: <b>{generations_num}</b> генераций\n'
+            f'💰 Сумма: <b>{amount} ₽</b>\n\n'
+            f'🔗 <a href="{payment_url}">Перейти к оплате</a>\n\n'
+            '⏳ После оплаты генерации будут добавлены автоматически, '
+            'и вы получите уведомление в этом чате.'
+        )
+        await message.answer(
             text=reply_text,
-            reply_markup=get_payment_check_kb(payment_id)
+            reply_markup=get_main_kb(),
+            parse_mode='HTML',
+            disable_web_page_preview=True
+        )
+    else:
+        # result содержит сообщение об ошибке
+        logger.error(f"Ошибка создания платежа для {tg_id}: {result}")
+        await message.answer(
+            text='❌ Не удалось создать счёт на оплату. Пожалуйста, попробуйте позже или обратитесь в поддержку.',
+            reply_markup=get_main_kb()
         )
 
 
@@ -150,11 +176,24 @@ async def get_email(msg: types.Message, state: FSMContext, session: AsyncSession
     if EMAIL_REGEX.match(email):
         logger.debug(f"User {msg.from_user.id} set email: {email}")
         await orm_set_email(session, msg.from_user.id, email)
+
+        # Получаем данные о тарифе из state
+        state_data = await state.get_data()
         await state.clear()
-        await msg.answer(
-            text='✅ E-mail для чеков сохранен, повторно выберите интересующий Вас тариф',
-            reply_markup=get_payment_kb()
-        )
+
+        generations_num = state_data.get('generations_num')
+        amount = state_data.get('amount')
+
+        if generations_num and amount:
+            # Сразу создаём платёж
+            await msg.answer(text='✅ E-mail сохранён. Создаю счёт на оплату...')
+            await process_payment_request(msg, msg.from_user.id, int(generations_num), int(amount), email)
+        else:
+            # Если данных нет — просим выбрать тариф
+            await msg.answer(
+                text='✅ E-mail для чеков сохранен, выберите интересующий Вас тариф',
+                reply_markup=get_payment_kb()
+            )
     else:
         await msg.answer(text='❌ E-mail некорректен, введите еще раз')
 
@@ -166,30 +205,19 @@ async def not_email(msg: types.Message):
 
 @user_router.callback_query(F.data.startswith('checkpayment_'))
 async def cb_check_payment(callback: CallbackQuery, session: AsyncSession):
-    payment_id = callback.data.split('_', 1)[1]
-    result = check_payment(payment_id)
-    if await orm_check_payment_exists(session, payment_id):
-        reply_text = '❌ Вы уже получили генерации за этот платеж'
-    elif result:
-        generations_num = int(result['generations_num'])
-        tg_id = int(result['user_id'])
-        amount = int(float(result['amount']))
-        referrer = await orm_get_referrer(session, tg_id)
-        if referrer is not None:
-            await orm_add_bonus(session, referrer, amount)
-        await orm_add_generations(session, tg_id, generations_num)
-        await orm_add_payment(
-            session=session,
-            tg_id=tg_id,
-            amount=amount,
-            generations_num=generations_num,
-            source='bot',
-            yoo_id=payment_id
-        )
-        reply_text = f'✅ Оплата прошла успешно, Вам добавлено {generations_num} генераций\n\n'
-    else:
-        reply_text = '❌ Платеж еще не прошел'
+    """
+    Legacy обработчик проверки платежа.
+
+    С Модуль Банком платежи обрабатываются автоматически через webhook,
+    но этот обработчик оставлен для обратной совместимости.
+    """
+    await callback.answer()
     await callback.message.answer(
-        text=reply_text,
+        text=(
+            '⏳ Платежи обрабатываются автоматически.\n\n'
+            'Если вы уже оплатили, генерации будут добавлены в течение нескольких минут, '
+            'и вы получите уведомление.\n\n'
+            'Если прошло более 10 минут — обратитесь в поддержку.'
+        ),
         reply_markup=get_main_kb()
     )
