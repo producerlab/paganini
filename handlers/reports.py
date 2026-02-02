@@ -11,7 +11,7 @@ from pathlib import Path
 from services.auth_service import orm_get_user
 from services.logging import logger
 from keyboards.user_keyboards import get_period_kb, get_main_kb, get_manage_kb, get_menu_kb, get_after_report_kb, \
-    get_quarters_kb, get_quarter_period_kb, get_no_generations_kb, get_error_kb, get_onboarding_kb
+    get_quarters_kb, get_quarter_period_kb, get_no_generations_kb, get_error_kb, get_onboarding_kb, get_confirm_report_kb
 from services.manage_stores import orm_add_store, orm_set_store, orm_edit_store, orm_check_store_owner, get_decrypted_token
 from services.payment import orm_reduce_generations
 from services.report_generator import generate_report_with_params, run_with_progress, orm_add_report, \
@@ -189,6 +189,7 @@ async def edit_store_token(msg: types.Message, state: FSMContext, session: Async
 class Report(StatesGroup):
     Period = State()
     Doc_num = State()
+    Confirm = State()
 
 
 @reports_router.message(or_f(Command("generate_report"), (F.text.lower().contains('отчет')), (F.text.lower().contains('отчёт'))))
@@ -289,12 +290,32 @@ async def cb_set_period(callback: CallbackQuery, state: FSMContext):
 
 
 @reports_router.message(Report.Doc_num, F.text)
-async def cmd_set_doc_num(msg: types.Message, state: FSMContext, session: AsyncSession):
+async def cmd_set_doc_num(msg: types.Message, state: FSMContext):
+    """Save doc number and show confirmation screen"""
     doc_num = msg.text
     await state.update_data(doc_num=doc_num)
     data = await state.get_data()
-    reply_text = f'Номер(а) документа ({data["doc_num"]}) сохранен(ы).\nМагазин - {data["name"]}\nПериод - {data["period"]}'
-    await msg.answer(reply_text)
+
+    # Show confirmation screen
+    reply_text = (
+        '📋 <b>Проверьте данные перед генерацией:</b>\n\n'
+        f'🏪 Магазин: <b>{data["name"]}</b>\n'
+        f'📅 Период: <b>{data["period"]}</b>\n'
+        f'📄 Документ: <code>{data["doc_num"]}</code>\n\n'
+        '❓ Всё верно?'
+    )
+    await msg.answer(
+        text=reply_text,
+        reply_markup=get_confirm_report_kb(),
+        parse_mode='HTML'
+    )
+    await state.set_state(Report.Confirm)
+
+
+@reports_router.callback_query(Report.Confirm, F.data == 'confirm_generate')
+async def cb_confirm_generate(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Confirmed - start report generation"""
+    data = await state.get_data()
     await state.clear()
 
     dates = data['period']
@@ -304,6 +325,9 @@ async def cmd_set_doc_num(msg: types.Message, state: FSMContext, session: AsyncS
     tg_id = data['user_id']
     store_id = data['store_id']
     date = datetime.strptime(dates.split('-')[0], "%d.%m.%Y").date()
+
+    msg = callback.message
+    await callback.answer()
 
     try:
         progress_state = {}

@@ -15,13 +15,17 @@ def get_main_kb() -> InlineKeyboardMarkup:
 
 
 def get_menu_kb() -> InlineKeyboardMarkup:
-    """Get menu kb"""
+    """Get menu kb - grouped by category"""
     ikb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text='📊 Генерация отчета', callback_data='cb_btn_generate_report'), InlineKeyboardButton(text='🏪 Управление магазинами', callback_data='cb_btn_manage_stores')],
-        [InlineKeyboardButton(text='❓ Как пользоваться ботом', url='https://web.biznesnaamazon.ru/Paganini')],
-        [InlineKeyboardButton(text='💎 Получить бонусные генерации', callback_data='cb_btn_bonus')],
+        # --- ОТЧЕТЫ ---
+        [InlineKeyboardButton(text='📊 Генерация отчета', callback_data='cb_btn_generate_report')],
+        [InlineKeyboardButton(text='🏪 Управление магазинами', callback_data='cb_btn_manage_stores')],
+        # --- ФИНАНСЫ ---
+        [InlineKeyboardButton(text='💳 Оплата', callback_data='cb_btn_payment'), InlineKeyboardButton(text='🤝 Партнерка', callback_data='cb_btn_refs')],
+        [InlineKeyboardButton(text='💎 Получить бонусы', callback_data='cb_btn_bonus')],
+        # --- ИНФОРМАЦИЯ ---
+        [InlineKeyboardButton(text='👤 Профиль', callback_data='cb_btn_profile'), InlineKeyboardButton(text='❓ Инструкция', url='https://web.biznesnaamazon.ru/Paganini')],
         [InlineKeyboardButton(text='💡 Канал с лайфхаками', url='https://t.me/+TXjDiIu3hnJmYmZi'), InlineKeyboardButton(text='🛟 Поддержка', url='https://web.biznesnaamazon.ru/tlgrm?bot=paganini_support_bot')],
-        [InlineKeyboardButton(text='👤 Профиль', callback_data='cb_btn_profile'), InlineKeyboardButton(text='🤝 Партнерка', callback_data='cb_btn_refs'), InlineKeyboardButton(text='💳 Оплата', callback_data='cb_btn_payment')],
     ])
 
     return ikb
@@ -219,6 +223,17 @@ def get_no_generations_kb() -> InlineKeyboardMarkup:
     ikb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text='💳 Пополнить', callback_data='cb_btn_payment')],
         [InlineKeyboardButton(text='🤝 Пригласить друзей', callback_data='cb_btn_refs')],
+        [InlineKeyboardButton(text='☰ Меню', callback_data='cb_btn_menu')]
+    ])
+
+    return ikb
+
+
+def get_confirm_report_kb() -> InlineKeyboardMarkup:
+    """Get kb for confirming report generation"""
+    ikb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='✅ Начать генерацию', callback_data='confirm_generate')],
+        [InlineKeyboardButton(text='✏️ Изменить период', callback_data='cb_btn_generate_report')],
         [InlineKeyboardButton(text='☰ Меню', callback_data='cb_btn_menu')]
     ])
 
