@@ -289,13 +289,20 @@ async def fetch_sales_records_async(date_from: str, date_to: str, token: str) ->
 
 
 
-async def transform_sales_records(df: pd.DataFrame) -> pd.DataFrame:
+async def transform_sales_records(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Transform sales records and extract storage data.
+    Returns: (sales_df, storage_df) - storage_df contains storage_fee aggregated by nm_id
+    """
+    empty_sales = pd.DataFrame(columns=[
+        "Артикул WB", "SUM из Кол-во", "SUM из Сумма продаж", "SUM из К перечислению продавцу",
+        "SUM из Кол-во доставок", "SUM из Стоимость доставки", "SUM из Штрафы",
+        "SUM из Дополнительный платеж", "Утилизация", "Подписка «Джем»", "Удержания"
+    ])
+    empty_storage = pd.DataFrame(columns=["nmId", "totalStorageSum"])
+
     if df.empty:
-        return pd.DataFrame(columns=[
-            "Артикул WB", "SUM из Кол-во", "SUM из Сумма продаж", "SUM из К перечислению продавцу",
-            "SUM из Кол-во доставок", "SUM из Стоимость доставки", "SUM из Штрафы",
-            "SUM из Дополнительный платеж", "Утилизация", "Подписка «Джем»", "Удержания"
-        ])
+        return empty_sales, empty_storage
     df = df.copy()
     if "deduction" in df.columns:
         df["deduction"] = pd.to_numeric(df["deduction"], errors="coerce").fillna(0)
@@ -316,10 +323,10 @@ async def transform_sales_records(df: pd.DataFrame) -> pd.DataFrame:
             df.loc[df["acceptance"] != 0]
             .groupby("nm_id", as_index=False)["acceptance"]
             .sum()
-            .rename(columns={"acceptance": "Приемка FBS"})
+            .rename(columns={"acceptance": "Приемка"})
         )
     else:
-        acceptance_agg = pd.DataFrame(columns=["nm_id", "Приемка FBS"])
+        acceptance_agg = pd.DataFrame(columns=["nm_id", "Приемка"])
 
     sales_df = df[df["doc_type_name"] != "Возврат"].copy()
     returns_df = df[df["doc_type_name"] == "Возврат"].copy()
@@ -357,15 +364,31 @@ async def transform_sales_records(df: pd.DataFrame) -> pd.DataFrame:
     merged = pd.merge(sales_agg, returns_agg, on="nm_id", how="left")
 
     merged = pd.merge(merged, acceptance_agg, on="nm_id", how="left")
-    merged["Приемка FBS"] = merged["Приемка FBS"].fillna(0)
+    merged["Приемка"] = merged["Приемка"].fillna(0)
 
     for c in ["Возвраты (Кол-во)","Возвраты (Сумма продаж)","Возвраты (К перечислению продавцу)"]:
         merged[c] = merged[c].fillna(0)
     merged.rename(columns={"nm_id":"Артикул WB"}, inplace=True)
-    return merged
+
+    # Extract storage_fee from sales report (faster than paid_storage API)
+    if "storage_fee" in df.columns:
+        storage_df = (
+            df[df["nm_id"] != 0]
+            .groupby("nm_id", as_index=False)["storage_fee"]
+            .sum()
+            .rename(columns={"nm_id": "nmId", "storage_fee": "totalStorageSum"})
+        )
+        storage_df["nmId"] = storage_df["nmId"].astype(str).str.upper()
+        storage_df["totalStorageSum"] = storage_df["totalStorageSum"].round(2)
+        logger.info("Хранение извлечено из отчёта продаж: %d позиций", len(storage_df))
+    else:
+        storage_df = pd.DataFrame(columns=["nmId", "totalStorageSum"])
+        logger.warning("storage_fee отсутствует в отчёте продаж")
+
+    return merged, storage_df
 
 
-# ------------------ Storage Report ------------------
+# ------------------ Storage Report (fallback, slow) ------------------
 
 async def get_storage_report(date_from: str, date_to: str, token: str) -> pd.DataFrame:
     logger.info("Запрос отчёта по платному хранению... %s – %s", date_from, date_to)
@@ -563,18 +586,20 @@ async def generate_report_with_params(dates: str, doc_number: str, store_token: 
     logger.info("Старт отчёта для %s: %s",store_name,dates)
     start_date, end_date = get_dates_from_str(dates)
 
-    sales_task      = fetch_sales_records_async(f"{start_date}T00:00:00",f"{end_date}T23:59:59",store_token)
-    acceptance_task = get_acceptance_report(start_date,end_date,store_token)
-    storage_task    = get_storage_report(start_date,end_date,store_token)
-    advert_task     = asyncio.to_thread(get_ad_expenses_report,store_token,doc_number,end_date)
-    cards_task      = fetch_product_cards_mapping(store_token)
+    # Запускаем параллельно только быстрые запросы
+    # storage_fee и acceptance теперь извлекаются из отчёта продаж
+    # (не нужны отдельные paid_storage и acceptance_report API - экономия ~7 минут!)
+    sales_task  = fetch_sales_records_async(f"{start_date}T00:00:00",f"{end_date}T23:59:59",store_token)
+    advert_task = asyncio.to_thread(get_ad_expenses_report,store_token,doc_number,end_date)
+    cards_task  = fetch_product_cards_mapping(store_token)
 
-    raw_records, acceptance_df, storage_df, adv_df, cards = await asyncio.gather(
-        sales_task, acceptance_task, storage_task, advert_task, cards_task
+    raw_records, adv_df, cards = await asyncio.gather(
+        sales_task, advert_task, cards_task
     )
 
-    df_raw   = pd.DataFrame(raw_records)
-    sales_df = await transform_sales_records(df_raw)
+    df_raw = pd.DataFrame(raw_records)
+    # transform_sales_records теперь возвращает (sales_df, storage_df)
+    sales_df, storage_df = await transform_sales_records(df_raw)
 
     # отзывы и прочее
     reviews_agg=pd.DataFrame(columns=["Артикул WB","Списание за отзывы"])
@@ -605,12 +630,12 @@ async def generate_report_with_params(dates: str, doc_number: str, store_token: 
         total_other += total_additional_payment
 
     # объединяем
-    for df,col in [(sales_df,"Артикул WB"),(storage_df,"nmId"),(adv_df,"Артикул WB"),(acceptance_df,"Артикул WB")]:
+    for df,col in [(sales_df,"Артикул WB"),(storage_df,"nmId"),(adv_df,"Артикул WB")]:
         df[col]=df[col].astype(str).str.upper()
 
     merged=pd.merge(sales_df, storage_df.rename(columns={"nmId":"Артикул WB"})[["Артикул WB","totalStorageSum"]],on="Артикул WB",how="outer")
     merged=pd.merge(merged, adv_df[["Артикул WB","totalAdjustedSum"]],on="Артикул WB",how="outer")
-    merged=pd.merge(merged, acceptance_df[["Артикул WB","Платная приемка"]],on="Артикул WB",how="outer")
+    # acceptance теперь берётся из sales_df как "Приемка" (не нужен отдельный acceptance_report API)
     merged=pd.merge(merged, reviews_agg, on="Артикул WB",how="left")
     merged.fillna(0,inplace=True)
     merged.sort_values("Артикул WB",inplace=True)
@@ -642,7 +667,7 @@ async def generate_report_with_params(dates: str, doc_number: str, store_token: 
         "Артикул WB","Артикул поставщика","Кол-во продаж","Общая выручка",
         "К Перечислению","Логистика, шт","Логистика, руб","Штрафы","Доплаты",
         "Возвраты","Хранение","ВБ.Продвижение","Подписка «Джем»",
-        "Платная приемка","Утилизация","Списание за отзывы","Прочие удержания","Приемка FBS","Баллы программы лояльности"
+        "Приемка","Утилизация","Списание за отзывы","Прочие удержания","Баллы программы лояльности"
     ]
     final_df=merged[final_cols]
 
@@ -656,12 +681,11 @@ async def generate_report_with_params(dates: str, doc_number: str, store_token: 
         - final_df["Хранение"]
         - final_df["ВБ.Продвижение"]
         - final_df["Подписка «Джем»"]
-        - final_df["Платная приемка"]
+        - final_df["Приемка"]
         - final_df["Утилизация"]
         - final_df["Списание за отзывы"]
         - final_df["Прочие удержания"]
         - final_df["Баллы программы лояльности"]
-        - final_df["Приемка FBS"]
     )
 
     yellow=PatternFill(fill_type="solid",start_color="FFFF00",end_color="FFFF00")
