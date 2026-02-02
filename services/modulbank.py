@@ -13,6 +13,7 @@ from typing import Optional
 
 import httpx
 
+from services.logging import logger
 
 # API endpoints
 MODULBANK_API_URL = "https://pay.modulbank.ru/api/v1"
@@ -150,7 +151,13 @@ async def create_bill(
     webhook_url = get_webhook_url()
     success_url = get_success_url()
 
+    # Debug logging
+    logger.info(f"Modulbank: merchant_id={merchant_id[:8]}... (len={len(merchant_id)})")
+    logger.info(f"Modulbank: secret_key set: {bool(secret_key)}, len={len(secret_key)}")
+    logger.info(f"Modulbank: test_mode={os.getenv('MODULBANK_TEST_MODE', '1')}")
+
     if not merchant_id or not secret_key:
+        logger.error("Modulbank: merchant_id или secret_key не установлены!")
         return None, None, "Модуль Банк не настроен"
 
     # Формируем order_id если не передан
@@ -178,6 +185,8 @@ async def create_bill(
     # Рассчитываем подпись
     params["signature"] = calculate_signature(params, secret_key)
 
+    logger.info(f"Modulbank: creating bill for order_id={order_id}, amount={amount}")
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
@@ -204,6 +213,7 @@ async def create_bill(
                 return None, None, error_msg
 
     except httpx.HTTPStatusError as e:
+        logger.error(f"Modulbank HTTP error: {e.response.status_code}, body: {e.response.text}")
         return None, None, f"HTTP ошибка: {e.response.status_code}"
     except httpx.RequestError as e:
         return None, None, f"Ошибка соединения: {str(e)}"
