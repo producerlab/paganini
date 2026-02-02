@@ -22,6 +22,7 @@ from handlers.partners import partners_router
 from handlers.common import common_router
 
 from common.bot_commands_list import user_commands
+from services.report_generator import close_http_clients
 
 # logging settings
 logging.basicConfig(
@@ -56,7 +57,8 @@ async def on_startup(bot):
 
 
 async def on_shutdown(bot):
-    print('бот выключился')
+    logger.info("Bot is shutting down...")
+    await close_http_clients()
 
 
 
