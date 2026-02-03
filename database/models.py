@@ -44,7 +44,7 @@ class Store(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     tg_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("user.tg_id"), nullable=False)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
-    token: Mapped[str] = mapped_column(String(512), nullable=False)
+    token: Mapped[str] = mapped_column(Text, nullable=False)
 
     reports: Mapped[list["Report"]] = relationship("Report")
     user: Mapped["User"] = relationship("User", back_populates="stores", foreign_keys=[tg_id])
