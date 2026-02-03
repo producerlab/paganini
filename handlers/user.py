@@ -56,8 +56,23 @@ async def handle_profile(msg: types.Message, tg_id:int, session: AsyncSession) -
 async def cb_bonus(callback: types.CallbackQuery, session: AsyncSession, bot: Bot) -> None:
     """Command get club bonus"""
     if not await check_user_in_club(callback.from_user.id, bot):
-        reply_text = ('❌ Бонус доступен ежемесячно только для резидентов закрытого клуба Titan Sellers Club\n\n'
-                        'Если вы еще не резидент, напишите нам в поддержку @mpbiz_bot')
+        reply_text = (
+            '💎 <b>Бонус для резидентов Titan Sellers Club</b>\n\n'
+            'Каждый месяц участники клуба получают 4 бесплатных генерации отчетов!\n\n'
+            '🚀 <b>Что даёт клуб Titan:</b>\n'
+            '• Ежемесячные бонусы в Paganini\n'
+            '• Закрытое сообщество селлеров\n'
+            '• Эксклюзивные обучающие материалы\n'
+            '• Прямая связь с экспертами'
+        )
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        titan_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='🚀 Узнать о клубе Titan', url='https://marketplacebiz.ru/titanclub')],
+            [InlineKeyboardButton(text='☰ Меню', callback_data='cb_btn_menu')]
+        ])
+        await callback.answer()
+        await callback.message.answer(text=reply_text, reply_markup=titan_kb, parse_mode='HTML')
+        return
     elif await orm_this_month_bonus_exists(session, callback.from_user.id):
         reply_text = '❌ Вы уже получали бонус в этом месяце'
     else:
