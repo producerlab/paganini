@@ -705,6 +705,11 @@ async def generate_report_with_params(progress_state: dict, dates: str, doc_numb
     for df,col in [(sales_df,"Артикул WB"),(storage_df,"nmId"),(adv_df,"Артикул WB")]:
         df[col]=df[col].astype(str).str.upper()
 
+    # Debug: логируем данные о хранении перед merge
+    logger.info("Storage DF перед merge: %d строк, сумма=%.2f", len(storage_df), storage_df["totalStorageSum"].sum() if len(storage_df) > 0 else 0)
+    logger.info("Sales DF артикулы (первые 5): %s", list(sales_df["Артикул WB"].head()))
+    logger.info("Storage DF артикулы (первые 5): %s", list(storage_df["nmId"].head()) if len(storage_df) > 0 else [])
+
     merged=pd.merge(sales_df, storage_df.rename(columns={"nmId":"Артикул WB"})[["Артикул WB","totalStorageSum"]],on="Артикул WB",how="outer")
     merged=pd.merge(merged, adv_df[["Артикул WB","totalAdjustedSum"]],on="Артикул WB",how="outer")
     # acceptance теперь берётся из sales_df как "Приемка" (не нужен отдельный acceptance_report API)
