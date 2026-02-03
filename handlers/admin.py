@@ -1,4 +1,5 @@
 from aiogram import Bot, Router, types, F
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -237,3 +238,52 @@ async def show_last_registrations(msg: types.Message, session: AsyncSession) -> 
         reply_text += f'Сделал отчетов: {user.generations_made}\n'
         reply_text += f'Осталось генераций: {user.generations_left}\n'
     await msg.answer(text=reply_text)
+
+
+@admin_router.message(Command('add_gens'))
+async def cmd_add_gens(msg: types.Message, session: AsyncSession) -> None:
+    """
+    Быстрое добавление генераций пользователю.
+    Формат: /add_gens <tg_id> <количество>
+    Пример: /add_gens 123456789 100
+    """
+    args = msg.text.split()[1:]  # Убираем саму команду
+
+    if len(args) != 2:
+        await msg.answer(
+            '❌ Неверный формат.\n\n'
+            'Использование: /add_gens <tg_id> <количество>\n'
+            'Пример: /add_gens 123456789 100'
+        )
+        return
+
+    try:
+        tg_id = int(args[0])
+        amount = int(args[1])
+    except ValueError:
+        await msg.answer('❌ tg_id и количество должны быть числами.')
+        return
+
+    if amount <= 0:
+        await msg.answer('❌ Количество генераций должно быть больше 0.')
+        return
+
+    # Проверяем существование пользователя
+    user = await orm_get_user(session, tg_id)
+    if user is None:
+        await msg.answer(f'❌ Пользователь с tg_id {tg_id} не найден.')
+        return
+
+    # Добавляем генерации
+    await orm_add_generations(session=session, tg_id=tg_id, generations_num=amount)
+
+    logger.info(f'Админ {msg.from_user.id} добавил {amount} генераций пользователю {tg_id}')
+
+    await msg.answer(
+        f'✅ Готово!\n\n'
+        f'Пользователю {user.first_name} (tg_id: {tg_id})\n'
+        f'добавлено генераций: {amount}\n\n'
+        f'Было: {user.generations_left}\n'
+        f'Стало: {user.generations_left + amount}',
+        reply_markup=get_admin_reply_kb()
+    )
