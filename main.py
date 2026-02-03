@@ -26,6 +26,7 @@ from common.bot_commands_list import user_commands
 from services.report_generator import close_http_clients
 from services.webhook_server import start_webhook_server, stop_webhook_server, set_payment_callback
 from services.payment import process_modulbank_payment
+from services.crypto import encrypt_token, is_token_encrypted
 
 # logging settings
 logging.basicConfig(
@@ -94,6 +95,34 @@ async def run_modulbank_migration():
                 pass
 
 
+async def run_token_encryption_migration():
+    """Миграция: шифрование plaintext токенов WB."""
+    if not os.getenv('ENCRYPTION_KEY'):
+        logger.warning("ENCRYPTION_KEY не установлен — токены не будут зашифрованы!")
+        return
+
+    from sqlalchemy import select, update
+    from database.models import Store
+
+    async with session_maker() as session:
+        result = await session.execute(select(Store))
+        stores = result.scalars().all()
+
+        migrated = 0
+        for store in stores:
+            if not is_token_encrypted(store.token):
+                encrypted = encrypt_token(store.token)
+                await session.execute(
+                    update(Store).where(Store.id == store.id).values(token=encrypted)
+                )
+                migrated += 1
+                logger.info(f"Токен магазина #{store.id} зашифрован")
+
+        if migrated > 0:
+            await session.commit()
+            logger.info(f"Миграция токенов завершена: зашифровано {migrated} токенов")
+
+
 async def on_startup(bot):
     global webhook_runner
 
@@ -108,6 +137,11 @@ async def on_startup(bot):
     # Автоматическая миграция для Модуль Банка
     logger.info("Проверяю миграции...")
     await run_modulbank_migration()
+
+    # Шифрование plaintext токенов
+    logger.info("Проверяю шифрование токенов...")
+    await run_token_encryption_migration()
+
     logger.info("Миграции завершены")
 
     # Запускаем webhook сервер для Модуль Банка
