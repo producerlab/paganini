@@ -11,8 +11,10 @@ from pathlib import Path
 from services.auth_service import orm_get_user
 from services.logging import logger
 from keyboards.user_keyboards import get_period_kb, get_main_kb, get_manage_kb, get_menu_kb, get_after_report_kb, \
-    get_quarters_kb, get_quarter_period_kb, get_no_generations_kb, get_error_kb, get_onboarding_kb, get_confirm_report_kb
-from services.manage_stores import orm_add_store, orm_set_store, orm_edit_store, orm_check_store_owner, get_decrypted_token
+    get_quarters_kb, get_quarter_period_kb, get_no_generations_kb, get_error_kb, get_onboarding_kb, get_confirm_report_kb, \
+    get_store_edit_kb, get_delete_confirm_kb
+from services.manage_stores import orm_add_store, orm_set_store, orm_edit_store, orm_check_store_owner, get_decrypted_token, \
+    orm_edit_store_name, orm_edit_store_token, orm_delete_store, orm_get_store
 from services.payment import orm_reduce_generations
 from services.report_generator import generate_report_with_params, run_with_progress, orm_add_report, \
     InvalidTokenError, WBTimeoutError, NoDataError
@@ -147,7 +149,7 @@ class EditStore(StatesGroup):
 
 @reports_router.callback_query(F.data.startswith('editstore_'))
 async def cb_edit_store(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
-    """Callback edit store"""
+    """Callback edit store - show edit menu"""
     try:
         store_id = int(callback.data.split('_', 1)[1])
     except ValueError:
@@ -159,31 +161,147 @@ async def cb_edit_store(callback: types.CallbackQuery, state: FSMContext, sessio
         await callback.answer("❌ Магазин не найден или не принадлежит вам", show_alert=True)
         return
 
+    store = await orm_get_store(session, store_id)
+    await state.clear()
+
+    reply_text = f'⚙️ <b>Настройки магазина "{store.name}"</b>\n\nВыберите действие:'
+    await callback.message.answer(
+        text=reply_text,
+        reply_markup=get_store_edit_kb(store_id, store.name),
+        parse_mode='HTML'
+    )
+    await callback.answer()
+
+
+@reports_router.callback_query(F.data.startswith('edit_name_'))
+async def cb_edit_store_name_start(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    """Start editing store name"""
+    try:
+        store_id = int(callback.data.split('_', 2)[2])
+    except ValueError:
+        await callback.answer("❌ Некорректный ID магазина", show_alert=True)
+        return
+
+    if not await orm_check_store_owner(session, store_id, callback.from_user.id):
+        await callback.answer("❌ Магазин не найден", show_alert=True)
+        return
+
+    store = await orm_get_store(session, store_id)
     await state.update_data(store_id=store_id)
-    reply_text = 'Введите название магазина:'
-    await callback.message.answer(reply_text)
     await state.set_state(EditStore.Name)
+
+    reply_text = f'Текущее название: <b>{store.name}</b>\n\nВведите новое название магазина:'
+    await callback.message.answer(text=reply_text, parse_mode='HTML')
+    await callback.answer()
 
 
 @reports_router.message(EditStore.Name, F.text)
-async def edit_store_name(msg: types.Message, state: FSMContext):
-    await state.update_data(name=msg.text)
-    reply_text = 'Введите токен магазина Wildberries. При его создании необходимо выбрать доступ к следующим разделам:\n\n'
-    reply_text += 'Контент, Статистика, Аналитика, Продвижение, Доступ чтение'
-    await msg.answer(reply_text)
+async def edit_store_name(msg: types.Message, state: FSMContext, session: AsyncSession):
+    """Save new store name"""
+    data = await state.get_data()
+    store_id = data.get('store_id')
+
+    await orm_edit_store_name(session, store_id, msg.text)
+    await state.clear()
+
+    reply_text = f'✅ Название магазина изменено на "<b>{msg.text}</b>"'
+    await msg.answer(text=reply_text, reply_markup=get_menu_kb(), parse_mode='HTML')
+
+
+@reports_router.callback_query(F.data.startswith('edit_token_'))
+async def cb_edit_store_token_start(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    """Start editing store token"""
+    try:
+        store_id = int(callback.data.split('_', 2)[2])
+    except ValueError:
+        await callback.answer("❌ Некорректный ID магазина", show_alert=True)
+        return
+
+    if not await orm_check_store_owner(session, store_id, callback.from_user.id):
+        await callback.answer("❌ Магазин не найден", show_alert=True)
+        return
+
+    await state.update_data(store_id=store_id)
     await state.set_state(EditStore.Token)
+
+    reply_text = (
+        '🔑 <b>Изменение токена</b>\n\n'
+        'Введите новый токен магазина Wildberries.\n\n'
+        'При создании токена выберите доступ к разделам:\n'
+        '• Контент\n• Статистика\n• Аналитика\n• Продвижение'
+    )
+    await callback.message.answer_media_group(media=media)
+    await callback.message.answer(text=reply_text, parse_mode='HTML')
+    await callback.answer()
 
 
 @reports_router.message(EditStore.Token, F.text)
 async def edit_store_token(msg: types.Message, state: FSMContext, session: AsyncSession):
-    await state.update_data(token=msg.text)
+    """Save new store token"""
     data = await state.get_data()
-    logger.debug(f"Editing store: {data.get('name')}")
-    reply_text = 'Магазин успешно Изменен!\n\n'
-    reply_text += 'Можете переходить к генерации отчета!'
-    await orm_edit_store(session, data)
+    store_id = data.get('store_id')
+
+    await orm_edit_store_token(session, store_id, msg.text)
     await state.clear()
+
+    reply_text = '✅ Токен магазина успешно обновлен!'
     await msg.answer(text=reply_text, reply_markup=get_menu_kb())
+
+
+@reports_router.callback_query(F.data.startswith('delete_store_'))
+async def cb_delete_store_confirm(callback: types.CallbackQuery, session: AsyncSession) -> None:
+    """Show delete confirmation"""
+    try:
+        store_id = int(callback.data.split('_', 2)[2])
+    except ValueError:
+        await callback.answer("❌ Некорректный ID магазина", show_alert=True)
+        return
+
+    if not await orm_check_store_owner(session, store_id, callback.from_user.id):
+        await callback.answer("❌ Магазин не найден", show_alert=True)
+        return
+
+    store = await orm_get_store(session, store_id)
+
+    reply_text = (
+        f'🗑 <b>Удаление магазина "{store.name}"</b>\n\n'
+        '⚠️ Это действие нельзя отменить.\n'
+        'История отчетов сохранится.\n\n'
+        'Вы уверены?'
+    )
+    await callback.message.answer(
+        text=reply_text,
+        reply_markup=get_delete_confirm_kb(store_id),
+        parse_mode='HTML'
+    )
+    await callback.answer()
+
+
+@reports_router.callback_query(F.data.startswith('confirm_delete_'))
+async def cb_delete_store_execute(callback: types.CallbackQuery, session: AsyncSession) -> None:
+    """Execute store deletion"""
+    try:
+        store_id = int(callback.data.split('_', 2)[2])
+    except ValueError:
+        await callback.answer("❌ Некорректный ID магазина", show_alert=True)
+        return
+
+    if not await orm_check_store_owner(session, store_id, callback.from_user.id):
+        await callback.answer("❌ Магазин не найден", show_alert=True)
+        return
+
+    store = await orm_get_store(session, store_id)
+    store_name = store.name
+
+    await orm_delete_store(session, store_id, callback.from_user.id)
+
+    reply_text = f'✅ Магазин "<b>{store_name}</b>" удален'
+    await callback.message.answer(
+        text=reply_text,
+        reply_markup=get_menu_kb(),
+        parse_mode='HTML'
+    )
+    await callback.answer()
 
 
 # ------------------ Reports ------------------

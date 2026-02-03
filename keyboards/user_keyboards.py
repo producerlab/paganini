@@ -61,13 +61,33 @@ async def get_manage_kb(session, tg_id) -> InlineKeyboardMarkup:
     stores = await orm_get_user_stores(session=session, tg_id=tg_id)
     for store in stores:
         ikb.add(
-            InlineKeyboardButton(text=f'Выбрать {store.name}', callback_data=f'setstore_{store.id}'),
-            InlineKeyboardButton(text=f'Изменить {store.name}', callback_data=f'editstore_{store.id}'),
+            InlineKeyboardButton(text=f'📊 {store.name}', callback_data=f'setstore_{store.id}'),
+            InlineKeyboardButton(text=f'⚙️', callback_data=f'editstore_{store.id}'),
         )
     ikb.adjust(2)
     ikb.row(InlineKeyboardButton(text="➕ Добавить магазин", callback_data='cb_btn_add_store'), )
 
     return ikb.as_markup()
+
+
+def get_store_edit_kb(store_id: int, store_name: str) -> InlineKeyboardMarkup:
+    """Get store edit menu kb"""
+    ikb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f'✏️ Изменить название', callback_data=f'edit_name_{store_id}')],
+        [InlineKeyboardButton(text=f'🔑 Изменить токен', callback_data=f'edit_token_{store_id}')],
+        [InlineKeyboardButton(text=f'🗑 Удалить магазин', callback_data=f'delete_store_{store_id}')],
+        [InlineKeyboardButton(text='← Назад', callback_data='cb_btn_manage_stores')]
+    ])
+    return ikb
+
+
+def get_delete_confirm_kb(store_id: int) -> InlineKeyboardMarkup:
+    """Get delete confirmation kb"""
+    ikb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='✅ Да, удалить', callback_data=f'confirm_delete_{store_id}')],
+        [InlineKeyboardButton(text='❌ Отмена', callback_data=f'editstore_{store_id}')]
+    ])
+    return ikb
 
 
 def get_period_kb() -> InlineKeyboardMarkup:
