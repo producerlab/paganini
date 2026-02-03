@@ -659,15 +659,19 @@ async def generate_report_with_params(progress_state: dict, dates: str, doc_numb
     progress_state['stage'] = 'fetch_cards'
     cards_task = fetch_product_cards_mapping(store_token)
 
+    # Stage 4: Fetch storage report (paid_storage API - storage_fee не входит в reportDetailByPeriod)
+    progress_state['stage'] = 'fetch_storage'
+    storage_task = get_storage_report(start_date, end_date, store_token)
+
     # Run all fetches in parallel
-    raw_records, adv_df, cards = await asyncio.gather(
-        sales_task, advert_task, cards_task
+    raw_records, adv_df, cards, storage_df = await asyncio.gather(
+        sales_task, advert_task, cards_task, storage_task
     )
 
-    # Stage 4: Process data
+    # Stage 5: Process data
     progress_state['stage'] = 'process'
     df_raw = pd.DataFrame(raw_records)
-    sales_df, storage_df = await transform_sales_records(df_raw)
+    sales_df, _ = await transform_sales_records(df_raw)
 
     # отзывы и прочее
     reviews_agg=pd.DataFrame(columns=["Артикул WB","Списание за отзывы"])
