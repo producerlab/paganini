@@ -164,7 +164,7 @@ async def cb_edit_store(callback: types.CallbackQuery, state: FSMContext, sessio
     store = await orm_get_store(session, store_id)
     await state.clear()
 
-    reply_text = f'⚙️ <b>Настройки магазина "{store.name}"</b>\n\nВыберите действие:'
+    reply_text = f'✏️ <b>Редактирование магазина "{store.name}"</b>\n\nВыберите действие:'
     await callback.message.answer(
         text=reply_text,
         reply_markup=get_store_edit_kb(store_id, store.name),

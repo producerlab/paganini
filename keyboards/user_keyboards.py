@@ -15,17 +15,14 @@ def get_main_kb() -> InlineKeyboardMarkup:
 
 
 def get_menu_kb() -> InlineKeyboardMarkup:
-    """Get menu kb - grouped by category"""
+    """Get menu kb - simplified and clean"""
     ikb = InlineKeyboardMarkup(inline_keyboard=[
-        # --- ОТЧЕТЫ ---
-        [InlineKeyboardButton(text='📊 Генерация отчета', callback_data='cb_btn_generate_report')],
-        [InlineKeyboardButton(text='🏪 Управление магазинами', callback_data='cb_btn_manage_stores')],
-        # --- ФИНАНСЫ ---
-        [InlineKeyboardButton(text='💳 Оплата', callback_data='cb_btn_payment'), InlineKeyboardButton(text='🤝 Партнерка', callback_data='cb_btn_refs')],
+        [InlineKeyboardButton(text='📊 Создать отчёт', callback_data='cb_btn_generate_report')],
+        [InlineKeyboardButton(text='🏪 Мои магазины', callback_data='cb_btn_manage_stores')],
+        [InlineKeyboardButton(text='💎 Пополнить баланс', callback_data='cb_btn_payment')],
         [InlineKeyboardButton(text='💎 Получить бонусы', callback_data='cb_btn_bonus')],
-        # --- ИНФОРМАЦИЯ ---
-        [InlineKeyboardButton(text='👤 Профиль', callback_data='cb_btn_profile'), InlineKeyboardButton(text='❓ Инструкция', url='https://web.biznesnaamazon.ru/Paganini')],
-        [InlineKeyboardButton(text='💡 Канал с лайфхаками', url='https://t.me/+TXjDiIu3hnJmYmZi'), InlineKeyboardButton(text='🛟 Поддержка', url='https://web.biznesnaamazon.ru/tlgrm?bot=paganini_support_bot')],
+        [InlineKeyboardButton(text='👤 Профиль', callback_data='cb_btn_profile'), InlineKeyboardButton(text='🤝 Партнёрка', callback_data='cb_btn_refs')],
+        [InlineKeyboardButton(text='❓ Помощь', url='https://web.biznesnaamazon.ru/Paganini'), InlineKeyboardButton(text='🛟 Поддержка', url='https://web.biznesnaamazon.ru/tlgrm?bot=paganini_support_bot')],
     ])
 
     return ikb
@@ -61,8 +58,8 @@ async def get_manage_kb(session, tg_id) -> InlineKeyboardMarkup:
     stores = await orm_get_user_stores(session=session, tg_id=tg_id)
     for store in stores:
         ikb.add(
-            InlineKeyboardButton(text=f'📊 {store.name}', callback_data=f'setstore_{store.id}'),
-            InlineKeyboardButton(text=f'⚙️', callback_data=f'editstore_{store.id}'),
+            InlineKeyboardButton(text=f'🏪 {store.name}', callback_data=f'setstore_{store.id}'),
+            InlineKeyboardButton(text=f'✏️', callback_data=f'editstore_{store.id}'),
         )
     ikb.adjust(2)
     ikb.row(InlineKeyboardButton(text="➕ Добавить магазин", callback_data='cb_btn_add_store'), )
@@ -241,7 +238,7 @@ def get_error_kb(error_type: str) -> InlineKeyboardMarkup:
 def get_no_generations_kb() -> InlineKeyboardMarkup:
     """Get kb when user has no generations left"""
     ikb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text='💳 Пополнить', callback_data='cb_btn_payment')],
+        [InlineKeyboardButton(text='💎 Пополнить', callback_data='cb_btn_payment')],
         [InlineKeyboardButton(text='🤝 Пригласить друзей', callback_data='cb_btn_refs')],
         [InlineKeyboardButton(text='☰ Меню', callback_data='cb_btn_menu')]
     ])
