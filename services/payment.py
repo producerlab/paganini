@@ -87,6 +87,10 @@ async def process_modulbank_payment(payment_data: dict, bot: Bot, session_maker:
     Обработка успешного платежа от webhook Модуль Банка.
 
     Вызывается из webhook_server.py при получении уведомления.
+
+    ВАЖНО: Все операции выполняются в одной транзакции для атомарности.
+    Порядок: сначала записываем платёж (для защиты от дубликатов),
+    потом начисляем бонусы и генерации.
     """
     if not payment_data.get('is_success'):
         return
@@ -110,18 +114,10 @@ async def process_modulbank_payment(payment_data: dict, bot: Bot, session_maker:
             logger.warning(f"Платёж {transaction_id} уже обработан")
             return
 
-        # Обрабатываем реферальный бонус
-        from services.refs import orm_get_referrer, orm_add_bonus
-        referrer = await orm_get_referrer(session, tg_id)
-        if referrer is not None:
-            await orm_add_bonus(session, referrer, amount)
+        # === ВСЕ ОПЕРАЦИИ В ОДНОЙ ТРАНЗАКЦИИ ===
 
-        # Добавляем генерации пользователю
-        await orm_add_generations(session, tg_id, generations_num)
-
-        # Записываем платёж в БД
-        await orm_add_payment(
-            session=session,
+        # 1. Сначала записываем платёж (защита от дубликатов при повторных webhook)
+        obj = Payment(
             tg_id=tg_id,
             amount=amount,
             generations_num=generations_num,
@@ -130,6 +126,28 @@ async def process_modulbank_payment(payment_data: dict, bot: Bot, session_maker:
             modulbank_bill_id=order_id,
             modulbank_transaction_id=transaction_id
         )
+        session.add(obj)
+
+        # 2. Добавляем генерации пользователю (без отдельного commit)
+        query_gens = update(User).where(User.tg_id == tg_id).values(
+            generations_left=User.generations_left + generations_num
+        )
+        await session.execute(query_gens)
+
+        # 3. Обрабатываем реферальный бонус (без отдельного commit)
+        from services.refs import orm_get_referrer
+        referrer = await orm_get_referrer(session, tg_id)
+        if referrer is not None:
+            bonus = amount // 10  # 10% бонус
+            query_bonus = update(User).where(User.tg_id == referrer).values(
+                bonus_left=User.bonus_left + bonus,
+                bonus_total=User.bonus_total + bonus
+            )
+            await session.execute(query_bonus)
+            logger.info(f"Начислен бонус {bonus}₽ рефереру {referrer} от платежа {tg_id}")
+
+        # 4. Один commit для всей транзакции
+        await session.commit()
 
         logger.info(f"Платёж {transaction_id} обработан: {generations_num} генераций для {tg_id}")
 

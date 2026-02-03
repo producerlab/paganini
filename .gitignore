@@ -97,3 +97,12 @@ secrets.json
 tmp/
 temp/
 *.tmp
+
+# Migration scripts (may contain sensitive data)
+migrate_*.py
+
+# Archives (user data, backups)
+*.zip
+
+# Old/unused scripts
+scripts/

@@ -51,7 +51,20 @@ async def orm_add_bonus(session: AsyncSession, tg_id: int, amount: int):
 
 
 async def orm_get_gens_for_bonus(session: AsyncSession, tg_id: int, amount: int, gens_num: int):
-    await orm_add_payment(session, tg_id, 0, gens_num, 'bonus', '')
-    query = update(User).where(User.tg_id == tg_id).values(bonus_left=User.bonus_left-amount)
-    await session.execute(query)
-    await session.commit()
+    """Обмен бонусов на генерации."""
+    # Начисляем генерации пользователю
+    query_gens = update(User).where(User.tg_id == tg_id).values(
+        generations_left=User.generations_left + gens_num
+    )
+    await session.execute(query_gens)
+
+    # Списываем бонусы
+    query_bonus = update(User).where(User.tg_id == tg_id).values(
+        bonus_left=User.bonus_left - amount
+    )
+    await session.execute(query_bonus)
+
+    # Записываем платёж (с amount=0, source='bonus')
+    await orm_add_payment(session, tg_id, 0, gens_num, 'bonus', yoo_id=None)
+
+    # Один commit для всей транзакции (orm_add_payment делает commit внутри)
