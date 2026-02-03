@@ -90,6 +90,16 @@ def get_delete_confirm_kb(store_id: int) -> InlineKeyboardMarkup:
     return ikb
 
 
+def get_after_store_edit_kb() -> InlineKeyboardMarkup:
+    """Get kb shown after editing store (name/token)"""
+    ikb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='📊 Сгенерировать отчет', callback_data='cb_btn_generate_report')],
+        [InlineKeyboardButton(text='🏪 Управление магазинами', callback_data='cb_btn_manage_stores')],
+        [InlineKeyboardButton(text='☰ Меню', callback_data='cb_btn_menu')]
+    ])
+    return ikb
+
+
 def get_period_kb() -> InlineKeyboardMarkup:
     """Get select period kb"""
     ikb = InlineKeyboardBuilder()

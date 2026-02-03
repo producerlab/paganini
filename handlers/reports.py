@@ -12,7 +12,7 @@ from services.auth_service import orm_get_user
 from services.logging import logger
 from keyboards.user_keyboards import get_period_kb, get_main_kb, get_manage_kb, get_menu_kb, get_after_report_kb, \
     get_quarters_kb, get_quarter_period_kb, get_no_generations_kb, get_error_kb, get_onboarding_kb, get_confirm_report_kb, \
-    get_store_edit_kb, get_delete_confirm_kb
+    get_store_edit_kb, get_delete_confirm_kb, get_after_store_edit_kb
 from services.manage_stores import orm_add_store, orm_set_store, orm_edit_store, orm_check_store_owner, get_decrypted_token, \
     orm_edit_store_name, orm_edit_store_token, orm_delete_store, orm_get_store
 from services.payment import orm_reduce_generations
@@ -204,8 +204,8 @@ async def edit_store_name(msg: types.Message, state: FSMContext, session: AsyncS
     await orm_edit_store_name(session, store_id, msg.text)
     await state.clear()
 
-    reply_text = f'✅ Название магазина изменено на "<b>{msg.text}</b>"'
-    await msg.answer(text=reply_text, reply_markup=get_menu_kb(), parse_mode='HTML')
+    reply_text = f'✅ Название магазина изменено на "<b>{msg.text}</b>"\n\nЧто делаем дальше?'
+    await msg.answer(text=reply_text, reply_markup=get_after_store_edit_kb(), parse_mode='HTML')
 
 
 @reports_router.callback_query(F.data.startswith('edit_token_'))
@@ -244,8 +244,8 @@ async def edit_store_token(msg: types.Message, state: FSMContext, session: Async
     await orm_edit_store_token(session, store_id, msg.text)
     await state.clear()
 
-    reply_text = '✅ Токен магазина успешно обновлен!'
-    await msg.answer(text=reply_text, reply_markup=get_menu_kb())
+    reply_text = '✅ Токен магазина успешно обновлен!\n\nЧто делаем дальше?'
+    await msg.answer(text=reply_text, reply_markup=get_after_store_edit_kb())
 
 
 @reports_router.callback_query(F.data.startswith('delete_store_'))
