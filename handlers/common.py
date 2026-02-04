@@ -30,27 +30,10 @@ async def cmd_start(msg: types.Message, state: FSMContext, session: AsyncSession
     """Command start"""
     await state.clear()
 
-
-    reply_text = (
-        '🎻 <b>Paganini</b> — расшифровка финансовых отчётов WB\n\n'
-        '✅ Понятная детализация вместо цифр в ЛК\n'
-        '✅ Отчёт за 1 минуту\n'
-        '✅ <b>4 генерации бесплатно</b>\n\n'
-        'Нажмите «Создать отчёт» чтобы начать 👇'
-    )
-    await msg.answer(text=reply_text, parse_mode='HTML')
-
     user_id = int(msg.from_user.id)
     is_registered = await auth_service.orm_check_user_reg(session, user_id)
 
-    # Check channel subscription (may fail if bot is not channel admin)
-    is_subscribed = True  # Default to True if check fails
-    try:
-        member = await msg.bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        is_subscribed = member.status in ["member", "administrator", "creator"]
-    except Exception as e:
-        logger.warning(f"Cannot check subscription for {user_id}: {e}")
-
+    # Handle referral links
     if len(msg.text.split()) > 1:
         args = msg.text.split()[1]
         if args.startswith('ref_'):
@@ -59,25 +42,57 @@ async def cmd_start(msg: types.Message, state: FSMContext, session: AsyncSession
             if referrer_id != msg.from_user.id:
                 await orm_save_ref(session, referrer_id, msg.from_user.id)
 
+    # Registered user - show menu
     if is_registered:
-        reply_text = f'Приветствую, {msg.from_user.first_name}!\n'
-        reply_text += '☰ Меню:'
-        await msg.answer(
-            text=reply_text,
-            reply_markup=get_menu_kb()
+        reply_text = (
+            f'🎻 <b>Paganini</b> — расшифровка финансовых отчётов WB\n\n'
+            f'Приветствую, {msg.from_user.first_name}!\n\n'
+            '☰ Меню:'
         )
-    elif not is_subscribed:
-        reply_text = f'Приветствую, {msg.from_user.first_name}!\n'
-        reply_text += f'Для доступа к боту подпишитесь на канал {CHANNEL_USERNAME}, затем нажмите на кнопку "Проверить подписку". 👇'
         await msg.answer(
             text=reply_text,
-            reply_markup=get_subscribe_kb()
+            reply_markup=get_menu_kb(),
+            parse_mode='HTML'
+        )
+        return
+
+    # New user - check channel subscription first
+    is_subscribed = True  # Default to True if check fails
+    try:
+        member = await msg.bot.get_chat_member(CHANNEL_USERNAME, user_id)
+        is_subscribed = member.status in ["member", "administrator", "creator"]
+    except Exception as e:
+        logger.warning(f"Cannot check subscription for {user_id}: {e}")
+
+    if not is_subscribed:
+        reply_text = (
+            '🎻 <b>Paganini</b> — расшифровка финансовых отчётов WB\n\n'
+            '✅ Понятная детализация вместо цифр в ЛК\n'
+            '✅ Отчёт за 1 минуту\n'
+            '✅ <b>4 генерации бесплатно</b>\n\n'
+            f'Для доступа к боту подпишитесь на канал {CHANNEL_USERNAME}, '
+            'затем нажмите на кнопку "Проверить подписку". 👇'
+        )
+        await msg.answer(
+            text=reply_text,
+            reply_markup=get_subscribe_kb(),
+            parse_mode='HTML'
         )
     else:
+        # New user, subscribed - ask for phone
+        reply_text = (
+            '🎻 <b>Paganini</b> — расшифровка финансовых отчётов WB\n\n'
+            '✅ Понятная детализация вместо цифр в ЛК\n'
+            '✅ Отчёт за 1 минуту\n'
+            '✅ <b>4 генерации бесплатно</b>\n\n'
+            'Для начала работы поделитесь своим контактом 👇'
+        )
         await state.set_state(Registration.contact)
         await msg.answer(
-            text="Пожалуйста, поделитесь своим контактом для регистрации в боте.\nДля этого нажмите на кнопку внизу. 👇",
-            reply_markup=get_contact_reply_kb())
+            text=reply_text,
+            reply_markup=get_contact_reply_kb(),
+            parse_mode='HTML'
+        )
 
 
 @common_router.callback_query(F.data == 'check_subscription')
