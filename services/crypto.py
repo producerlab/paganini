@@ -39,8 +39,7 @@ def encrypt_token(plaintext: str) -> str:
     """
     key = _get_key()
     if not key:
-        # Fallback: return plaintext if no encryption key
-        return plaintext
+        raise ValueError("ENCRYPTION_KEY not configured - cannot store tokens securely")
 
     try:
         aesgcm = AESGCM(key)
@@ -49,9 +48,11 @@ def encrypt_token(plaintext: str) -> str:
         # Combine nonce + ciphertext and encode as base64
         encrypted = base64.b64encode(nonce + ciphertext).decode('utf-8')
         return f"enc:{encrypted}"  # Prefix to identify encrypted values
+    except ValueError:
+        raise
     except Exception as e:
         logger.error(f"Encryption failed: {e}")
-        return plaintext
+        raise ValueError(f"Token encryption failed: {e}")
 
 
 def decrypt_token(encrypted: str) -> str:
