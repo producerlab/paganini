@@ -62,7 +62,8 @@ async def get_manage_kb(session, tg_id) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=f'✏️', callback_data=f'editstore_{store.id}'),
         )
     ikb.adjust(2)
-    ikb.row(InlineKeyboardButton(text="➕ Добавить магазин", callback_data='cb_btn_add_store'), )
+    ikb.row(InlineKeyboardButton(text="➕ Добавить магазин", callback_data='cb_btn_add_store'))
+    ikb.row(InlineKeyboardButton(text="☰ Меню", callback_data='cb_btn_menu'))
 
     return ikb.as_markup()
 
