@@ -19,7 +19,7 @@ def get_menu_kb() -> InlineKeyboardMarkup:
     ikb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text='📊 Создать отчёт', callback_data='cb_btn_generate_report')],
         [InlineKeyboardButton(text='🏪 Мои магазины', callback_data='cb_btn_manage_stores')],
-        [InlineKeyboardButton(text='💎 Пополнить баланс', callback_data='cb_btn_payment')],
+        [InlineKeyboardButton(text='💳 Пополнить баланс', callback_data='cb_btn_payment')],
         [InlineKeyboardButton(text='💎 Получить бонусы', callback_data='cb_btn_bonus')],
         [InlineKeyboardButton(text='👤 Профиль', callback_data='cb_btn_profile'), InlineKeyboardButton(text='🤝 Партнёрка', callback_data='cb_btn_refs')],
         [InlineKeyboardButton(text='❓ Помощь', url='https://web.biznesnaamazon.ru/Paganini'), InlineKeyboardButton(text='🛟 Поддержка', url='https://web.biznesnaamazon.ru/tlgrm?bot=paganini_support_bot')],
