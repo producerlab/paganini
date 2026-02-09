@@ -14,7 +14,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     tg_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
     phone: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    email: Mapped[str] = mapped_column(String(128))
+    email: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     first_name: Mapped[str] = mapped_column(String(64), nullable=False)
     user_name: Mapped[Optional[str]] = mapped_column(String(64))
     role: Mapped[str] = mapped_column(String(16), default='user', nullable=False)

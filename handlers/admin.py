@@ -9,7 +9,7 @@ from keyboards.admin_keyboards import get_admin_reply_kb
 from services.admin import orm_get_admin_list, orm_get_user_via_phone, orm_get_last_payments, orm_get_generations_top, \
     orm_get_last_registrations
 from services.auth_service import orm_get_user
-from services.payment import orm_add_payment, orm_add_generations
+from services.payment import orm_add_payment, orm_add_generations, orm_this_month_bonus_exists
 from services.logging import logger
 
 admin_router = Router(name='admin_router')
@@ -73,6 +73,7 @@ async def get_user_info_phone(msg: types.Message, state: FSMContext, session: As
     await state.clear()
     user = await orm_get_user_via_phone(session, phone)
     if user is not None:
+        club_bonus = await orm_this_month_bonus_exists(session, user.tg_id)
         reply_text = f'Информация о пользователе:\n\n'
         reply_text += f'Имя: {user.first_name}\n'
         reply_text += f'Роль: {user.role}\n'
@@ -82,7 +83,8 @@ async def get_user_info_phone(msg: types.Message, state: FSMContext, session: As
         reply_text += f'Сделал отчетов: {user.generations_made}\n'
         reply_text += f'Осталось генераций: {user.generations_left}\n'
         reply_text += f'Бонусов заработано: {user.bonus_total}\n'
-        reply_text += f'Бонусов доступно: {user.bonus_left}'
+        reply_text += f'Бонусов доступно: {user.bonus_left}\n'
+        reply_text += f'Клубный бонус: {"✅ получен" if club_bonus else "❌ не получен"}'
     else:
         reply_text = f'Пользователя с номером +{phone} нету!'
     await msg.answer(
@@ -113,6 +115,7 @@ async def get_user_info_by_tg(msg: types.Message, state: FSMContext, session: As
     await state.clear()
     user = await orm_get_user(session, tg_id)
     if user is not None:
+        club_bonus = await orm_this_month_bonus_exists(session, user.tg_id)
         reply_text = f'Информация о пользователе:\n\n'
         reply_text += f'Имя: {user.first_name}\n'
         reply_text += f'Роль: {user.role}\n'
@@ -122,7 +125,8 @@ async def get_user_info_by_tg(msg: types.Message, state: FSMContext, session: As
         reply_text += f'Сделал отчетов: {user.generations_made}\n'
         reply_text += f'Осталось генераций: {user.generations_left}\n'
         reply_text += f'Бонусов заработано: {user.bonus_total}\n'
-        reply_text += f'Бонусов доступно: {user.bonus_left}'
+        reply_text += f'Бонусов доступно: {user.bonus_left}\n'
+        reply_text += f'Клубный бонус: {"✅ получен" if club_bonus else "❌ не получен"}'
     else:
         reply_text = f'Пользователя с tg_id {tg_id} нету!'
     await msg.answer(

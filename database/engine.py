@@ -10,8 +10,15 @@ db_url = os.getenv('DB_URL', '')
 db_host = db_url.split('@')[-1].split('/')[0] if '@' in db_url else 'configured'
 logger.info(f'Database host: {db_host}')
 
+# Convert postgresql:// to postgresql+asyncpg:// for async driver
+# Railway provides DB_URL with postgresql://, but we need asyncpg driver
+if db_url.startswith('postgresql://'):
+    db_url = db_url.replace('postgresql://', 'postgresql+asyncpg://', 1)
+elif db_url.startswith('postgres://'):
+    db_url = db_url.replace('postgres://', 'postgresql+asyncpg://', 1)
+
 engine = create_async_engine(
-    os.getenv('DB_URL'),
+    db_url,
     echo=os.getenv('DB_ECHO', 'false').lower() == 'true'
 )
 
